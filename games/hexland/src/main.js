@@ -1,0 +1,513 @@
+// Hexland - Main Application Entrypoint (Online Friends Multiplayer - Zero Bots)
+//
+// Everyone plays on their own device. The host's browser owns the real game:
+// every move (the host's own too) goes through applyAction(), which checks that
+// it's really that player's turn before changing anything, then sends each
+// player a snapshot with only their own cards visible.
+
+const MAX_PLAYERS = 4;
+const MIN_PLAYERS = 2;
+
+class HexlandApp {
+    constructor() {
+        this.canvas = document.getElementById('hexland-canvas');
+        this.board = new BoardGraph();
+        this.game = new HexlandGame(this.board, [{ name: 'Player 1' }, { name: 'Player 2' }, { name: 'Player 3' }]);
+
+        this.net = new HexlandNet();
+        this.roomCode = null;
+        this.mySeat = null;
+        this.started = false;
+        this.lobbyPlayers = [];   // host only: [{ name, token, connId }] in seat order
+
+        this.renderer = new HexlandRenderer(this.canvas, this.game);
+        this.ui = new HexlandUI(this.game, this.renderer, soundFX, (action, data) => this.dispatch(action, data));
+
+        this.init();
+    }
+
+    async init() {
+        await pixelAssets.loadAssets();
+        this.bindCanvasEvents();
+        this.bindLobby();
+        this.startLoop();
+    }
+
+    // ---------- Lobby ----------
+
+    bindLobby() {
+        const params = new URLSearchParams(location.search);
+        const code = (params.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const savedName = this.storage('hexland-name') || '';
+
+        if (code) {
+            this.roomCode = code;
+            this.ui.showLobbyName('join', savedName, code);
+            this.ui.onLobbySubmit = name => this.joinRoom(name);
+            // Rejoin automatically after a page refresh
+            if (savedName && this.storage(`hexland-token-${code}`)) this.joinRoom(savedName);
+        } else {
+            this.ui.showLobbyName('host', savedName);
+            this.ui.onLobbySubmit = name => this.createRoom(name);
+        }
+
+        this.ui.onStartGame = () => this.startGame();
+        this.ui.onNewGame = () => this.startGame();
+    }
+
+    storage(key, value) {
+        try {
+            if (value === undefined) return localStorage.getItem(key);
+            localStorage.setItem(key, value);
+        } catch (e) { /* storage blocked: rejoin-on-refresh just won't work */ }
+        return null;
+    }
+
+    roomLink() {
+        return `${location.href.split(/[?#]/)[0]}?room=${this.roomCode}`;
+    }
+
+    async createRoom(name) {
+        this.storage('hexland-name', name);
+        this.ui.setLobbyBusy('Creating room...');
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                this.roomCode = await this.net.host(HexlandNet.makeRoomCode());
+                break;
+            } catch (err) {
+                if (err.message !== 'ROOM_TAKEN' || attempt === 2) {
+                    this.ui.showLobbyError('Could not create a room. Check your internet connection and try again.');
+                    return;
+                }
+                this.net = new HexlandNet();
+            }
+        }
+
+        this.mySeat = 0;
+        this.lobbyPlayers = [{ name, token: 'host', connId: null }];
+        this.net.on('guestMessage', (connId, msg) => this.onGuestMessage(connId, msg));
+        this.net.on('guestLeft', connId => this.onGuestLeft(connId));
+
+        window.addEventListener('beforeunload', e => {
+            if (this.lobbyPlayers.length > 1) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        this.ui.roomLink = this.roomLink();
+        this.refreshLobby();
+    }
+
+    async joinRoom(name) {
+        this.storage('hexland-name', name);
+        this.ui.setLobbyBusy('Joining room...');
+
+        let token = this.storage(`hexland-token-${this.roomCode}`);
+        if (!token) {
+            token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+            this.storage(`hexland-token-${this.roomCode}`, token);
+        }
+
+        this.net.on('hostMessage', msg => this.onHostMessage(msg));
+        this.net.on('hostLeft', () => this.ui.showConnectionLost());
+
+        try {
+            await this.net.join(this.roomCode);
+        } catch (err) {
+            this.net = new HexlandNet();
+            this.ui.showLobbyName('join', name, this.roomCode);
+            this.ui.showLobbyError(err.message === 'ROOM_NOT_FOUND'
+                ? 'Room not found. The host may have closed the page.'
+                : 'Could not connect to the room. Please try again.');
+            return;
+        }
+
+        this.ui.roomLink = this.roomLink();
+        this.net.sendToHost({ t: 'join', name, token });
+    }
+
+    refreshLobby() {
+        const names = this.lobbyPlayers.map(p => p.name);
+        this.ui.showLobbyRoom({
+            isHost: true,
+            link: this.roomLink(),
+            players: names,
+            mySeat: 0,
+            canStart: names.length >= MIN_PLAYERS
+        });
+        this.lobbyPlayers.forEach((p, seat) => {
+            if (p.connId) this.net.sendTo(p.connId, { t: 'lobby', players: names, seat });
+        });
+    }
+
+    // ---------- Host: messages from guests ----------
+
+    onGuestMessage(connId, msg) {
+        if (!msg || typeof msg !== 'object') return;
+
+        if (msg.t === 'join') {
+            const name = String(msg.name || '').trim().slice(0, 16) || 'Friend';
+            const token = String(msg.token || '');
+            let seat = this.lobbyPlayers.findIndex(p => p.token === token);
+
+            if (seat === -1) {
+                if (this.started) {
+                    this.net.sendTo(connId, { t: 'error', message: 'This game has already started.' });
+                    return;
+                }
+                if (this.lobbyPlayers.length >= MAX_PLAYERS) {
+                    this.net.sendTo(connId, { t: 'error', message: 'This room is full (4 players).' });
+                    return;
+                }
+                this.lobbyPlayers.push({ name, token, connId });
+                seat = this.lobbyPlayers.length - 1;
+            } else {
+                this.lobbyPlayers[seat].connId = connId;
+                if (!this.started) this.lobbyPlayers[seat].name = name;
+            }
+
+            if (this.started) {
+                const p = this.game.players[seat];
+                p.online = true;
+                this.game.log(`🔌 ${p.name} reconnected.`);
+                this.broadcastState([]);
+            } else {
+                this.refreshLobby();
+            }
+            return;
+        }
+
+        if (msg.t === 'action' && this.started) {
+            const seat = this.lobbyPlayers.findIndex(p => p.connId === connId);
+            if (seat !== -1) this.applyAction(seat, msg.action, msg.data || {});
+        }
+    }
+
+    onGuestLeft(connId) {
+        const seat = this.lobbyPlayers.findIndex(p => p.connId === connId);
+        if (seat === -1) return;
+
+        if (!this.started) {
+            this.lobbyPlayers.splice(seat, 1);
+            this.refreshLobby();
+        } else {
+            this.lobbyPlayers[seat].connId = null;
+            const p = this.game.players[seat];
+            p.online = false;
+            this.game.log(`📴 ${p.name} disconnected. They can rejoin with the same link.`);
+            this.broadcastState([]);
+        }
+    }
+
+    startGame() {
+        if (!this.net.isHost || this.lobbyPlayers.length < MIN_PLAYERS) return;
+
+        const playerConfigs = this.lobbyPlayers.map(p => ({ name: p.name }));
+        this.board = new BoardGraph();
+        this.setGame(new HexlandGame(this.board, playerConfigs));
+        this.game.players.forEach((p, i) => { p.online = i === 0 || !!this.lobbyPlayers[i].connId; });
+        this.started = true;
+        this.lastTurn = null;
+
+        this.game.log(`⚔️ Game started! ${playerConfigs.length} friends at the table. ${this.game.getCurrentPlayer().name} places the first settlement.`);
+        this.ui.hideLobby();
+        this.broadcastState([{ type: 'start' }]);
+    }
+
+    setGame(game) {
+        const prevTurn = this.game ? this.game.turnIndex : null;
+        this.game = game;
+        this.board = game.board;
+        this.renderer.game = game;
+        this.renderer.board = game.board;
+        this.ui.game = game;
+        return prevTurn;
+    }
+
+    // ---------- Host: the only place the game changes ----------
+
+    applyAction(seat, action, data) {
+        const g = this.game;
+        if (!g || g.phase === 'GAME_OVER') return;
+
+        const isTurn = seat === g.turnIndex;
+        const inAction = g.phase === 'ACTION';
+        const canBuildNow = inAction && g.diceRolled;
+        const isResource = r => Object.values(RESOURCES).includes(r);
+        const validId = (value, list) => Number.isInteger(value) && value >= 0 && value < list.length;
+        const vertexId = Number(data.vertexId);
+        const edgeId = Number(data.edgeId);
+        const hexId = Number(data.hexId);
+        const events = [];
+        let ok = false;
+
+        switch (action) {
+            case 'roll': {
+                if (!isTurn || !inAction || g.diceRolled) break;
+                const result = g.rollDice();
+                ok = !!result;
+                if (ok) events.push({ type: 'roll', sum: result.sum });
+                break;
+            }
+            case 'build_settlement': {
+                const setup = g.phase === 'SETUP_SETTLEMENT_1' || g.phase === 'SETUP_SETTLEMENT_2';
+                if (!isTurn || !(setup || canBuildNow) || !validId(vertexId, this.board.vertices)) break;
+                ok = g.buildSettlement(vertexId);
+                if (ok) events.push({ type: 'build', kind: 'settlement', vertexId });
+                break;
+            }
+            case 'build_city': {
+                if (!isTurn || !canBuildNow || !validId(vertexId, this.board.vertices)) break;
+                ok = g.buildCity(vertexId);
+                if (ok) events.push({ type: 'build', kind: 'city', vertexId });
+                break;
+            }
+            case 'build_road': {
+                const setup = g.phase === 'SETUP_ROAD_1' || g.phase === 'SETUP_ROAD_2';
+                const freeRoad = inAction && g.freeRoads > 0;
+                if (!isTurn || !(setup || canBuildNow || freeRoad) || !validId(edgeId, this.board.edges)) break;
+                ok = g.buildRoad(edgeId);
+                if (ok) events.push({ type: 'build', kind: 'road', edgeId });
+                break;
+            }
+            case 'move_robber': {
+                if (!isTurn || g.phase !== 'ROBBER_MOVE' || !validId(hexId, this.board.hexes)) break;
+                ok = g.moveRobber(hexId);
+                if (ok) events.push({ type: 'robber', hexId });
+                break;
+            }
+            case 'steal': {
+                const victimId = Number(data.victimId);
+                if (!isTurn || g.phase !== 'ROBBER_STEAL' || !g.stealTargets.includes(victimId)) break;
+                ok = g.stealResource(victimId);
+                if (ok) events.push({ type: 'card' });
+                break;
+            }
+            case 'discard': {
+                const pending = g.pendingDiscards[0];
+                if (!pending || pending.playerId !== seat) break;
+                const cards = {};
+                for (const [res, n] of Object.entries(data.resources || {})) {
+                    if (!isResource(res)) continue;
+                    cards[res] = Math.max(0, Math.floor(Number(n) || 0));
+                }
+                ok = g.discardResources(seat, cards);
+                if (ok) events.push({ type: 'card' });
+                break;
+            }
+            case 'bank_trade': {
+                if (!isTurn || !canBuildNow || !isResource(data.give) || !isResource(data.get)) break;
+                ok = g.executeBankTrade(data.give, data.get);
+                if (ok) events.push({ type: 'trade' });
+                break;
+            }
+            case 'buy_dev': {
+                if (!isTurn || !canBuildNow) break;
+                ok = !!g.buyDevCard();
+                if (ok) events.push({ type: 'card' });
+                break;
+            }
+            case 'play_dev': {
+                if (!isTurn || !inAction) break;
+                const type = data.type;
+                if (!Object.values(DEV_CARD_TYPES).includes(type)) break;
+                const params = {};
+                if (type === DEV_CARD_TYPES.MONOPOLY) {
+                    if (!isResource(data.resource)) break;
+                    params.resource = data.resource;
+                } else if (type === DEV_CARD_TYPES.YEAR_OF_PLENTY) {
+                    if (!isResource(data.res1) || !isResource(data.res2)) break;
+                    params.res1 = data.res1;
+                    params.res2 = data.res2;
+                }
+                ok = !!g.playDevCard(type, params);
+                if (ok) events.push({ type: type === DEV_CARD_TYPES.KNIGHT ? 'knight' : 'card' });
+                break;
+            }
+            case 'end_turn': {
+                if (!isTurn) break;
+                ok = g.endTurn();
+                break;
+            }
+        }
+
+        // Always resend, so a rejected move snaps back to the real state
+        this.broadcastState(ok ? events : []);
+    }
+
+    broadcastState(events) {
+        this.lobbyPlayers.forEach((p, seat) => {
+            if (p.connId) {
+                this.net.sendTo(p.connId, { t: 'state', seat, state: this.game.toState(seat), events });
+            }
+        });
+        this.afterStateChange(events, this.lastTurn);
+        this.lastTurn = this.game.turnIndex;
+    }
+
+    // ---------- Guest: messages from the host ----------
+
+    onHostMessage(msg) {
+        if (!msg || typeof msg !== 'object') return;
+
+        if (msg.t === 'lobby') {
+            this.mySeat = msg.seat;
+            this.ui.showLobbyRoom({
+                isHost: false,
+                link: this.roomLink(),
+                players: msg.players,
+                mySeat: msg.seat,
+                canStart: false
+            });
+        } else if (msg.t === 'state') {
+            this.mySeat = msg.seat;
+            const prevTurn = this.started ? this.game.turnIndex : null;
+            this.setGame(HexlandGame.fromState(msg.state));
+            this.started = true;
+            this.ui.hideLobby();
+            this.afterStateChange(msg.events || [], prevTurn);
+        } else if (msg.t === 'error') {
+            this.ui.showLobbyError(msg.message);
+        }
+    }
+
+    // ---------- Both: sounds, popups and UI refresh ----------
+
+    afterStateChange(events, prevTurn) {
+        const g = this.game;
+        this.ui.mySeat = this.mySeat;
+
+        events.forEach(ev => {
+            if (ev.type === 'build') {
+                soundFX.playBuild();
+                if (ev.kind === 'road') {
+                    const e = this.board.edges[ev.edgeId];
+                    const v1 = this.board.vertices[e.v1];
+                    const v2 = this.board.vertices[e.v2];
+                    const pt = this.renderer.toScreen((v1.x + v2.x) / 2, (v1.y + v2.y) / 2);
+                    this.renderer.addPopup('🚧 Road!', pt.x, pt.y, '#f39c12');
+                } else {
+                    const v = this.board.vertices[ev.vertexId];
+                    const pt = this.renderer.toScreen(v.x, v.y);
+                    const label = ev.kind === 'city' ? '🏰 City!' : '🏠 Settlement!';
+                    this.renderer.addPopup(label, pt.x, pt.y, ev.kind === 'city' ? '#f1c40f' : '#2ecc71');
+                }
+            } else if (ev.type === 'roll') {
+                soundFX.playDiceRoll();
+                if (ev.sum === 7) {
+                    soundFX.playRobber();
+                } else {
+                    soundFX.playHarvest();
+                    this.board.hexes.forEach(hex => {
+                        if (hex.number === ev.sum && hex.resource && hex.id !== this.board.robberHexId) {
+                            const pt = this.renderer.toScreen(hex.x, hex.y);
+                            this.renderer.addPopup(`+ ${RESOURCE_NAMES[hex.resource]}`, pt.x, pt.y, '#f1c40f');
+                        }
+                    });
+                }
+            } else if (ev.type === 'robber' || ev.type === 'knight') {
+                soundFX.playRobber();
+            } else if (ev.type === 'trade') {
+                soundFX.playHarvest();
+            } else if (ev.type === 'card') {
+                soundFX.playCard();
+            }
+        });
+
+        // Your turn now: give a little nudge
+        if (prevTurn !== null && prevTurn !== undefined && prevTurn !== g.turnIndex && g.turnIndex === this.mySeat) {
+            soundFX.playCard();
+            this.renderer.addPopup('⭐ Your turn!', this.renderer.width / 2, 60, '#f1c40f');
+        }
+
+        // Keep road-building mode on while free roads are left
+        if (g.freeRoads > 0 && g.turnIndex === this.mySeat) this.renderer.activeMode = 'build_road';
+        else if (this.renderer.activeMode === 'build_road' && g.freeRoads === 0 && !g.diceRolled) this.renderer.activeMode = null;
+
+        this.ui.update();
+    }
+
+    // ---------- Sending moves ----------
+
+    dispatch(action, data = {}) {
+        if (!this.started) return;
+        if (this.net.isHost) this.applyAction(this.mySeat, action, data);
+        else this.net.sendToHost({ t: 'action', action, data });
+    }
+
+    isMyTurn() {
+        return this.started && this.game.turnIndex === this.mySeat && this.game.phase !== 'GAME_OVER';
+    }
+
+    bindCanvasEvents() {
+        this.canvas.addEventListener('mousemove', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const world = this.renderer.toWorld(e.clientX - rect.left, e.clientY - rect.top);
+
+            this.renderer.hoverVertex = this.board.getNearestVertex(world.x, world.y, 22);
+            this.renderer.hoverEdge = this.board.getNearestEdge(world.x, world.y, 20);
+            this.renderer.hoverHex = this.board.getNearestHex(world.x, world.y);
+        });
+
+        this.canvas.addEventListener('mouseleave', () => {
+            this.renderer.hoverVertex = null;
+            this.renderer.hoverEdge = null;
+            this.renderer.hoverHex = null;
+        });
+
+        this.canvas.addEventListener('click', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const world = this.renderer.toWorld(e.clientX - rect.left, e.clientY - rect.top);
+            this.handleCanvasClick(world);
+        });
+    }
+
+    handleCanvasClick(world) {
+        // Watching only: nothing happens on other players' turns
+        if (!this.isMyTurn()) return;
+
+        const phase = this.game.phase;
+        const mode = this.renderer.activeMode;
+        const nearestV = () => this.board.getNearestVertex(world.x, world.y, 24);
+        const nearestE = () => this.board.getNearestEdge(world.x, world.y, 24);
+
+        if (phase === 'SETUP_SETTLEMENT_1' || phase === 'SETUP_SETTLEMENT_2') {
+            const v = nearestV();
+            if (v) this.dispatch('build_settlement', { vertexId: v.id });
+        } else if (phase === 'SETUP_ROAD_1' || phase === 'SETUP_ROAD_2') {
+            const e = nearestE();
+            if (e) this.dispatch('build_road', { edgeId: e.id });
+        } else if (phase === 'ROBBER_MOVE') {
+            const hex = this.board.getNearestHex(world.x, world.y);
+            if (hex) this.dispatch('move_robber', { hexId: hex.id });
+        } else if (mode === 'build_settlement') {
+            const v = nearestV();
+            if (v) { this.dispatch('build_settlement', { vertexId: v.id }); this.renderer.activeMode = null; }
+        } else if (mode === 'build_city') {
+            const v = nearestV();
+            if (v) { this.dispatch('build_city', { vertexId: v.id }); this.renderer.activeMode = null; }
+        } else if (mode === 'build_road') {
+            const e = nearestE();
+            if (e) {
+                this.dispatch('build_road', { edgeId: e.id });
+                if (this.game.freeRoads <= 1) this.renderer.activeMode = null;
+            }
+        }
+    }
+
+    startLoop() {
+        const loop = () => {
+            this.renderer.interactive = this.isMyTurn();
+            this.renderer.render();
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+}
+
+// Boot up game when DOM is loaded
+window.addEventListener('DOMContentLoaded', () => {
+    window.hexlandApp = new HexlandApp();
+});

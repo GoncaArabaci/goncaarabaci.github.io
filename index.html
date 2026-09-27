@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; object-src 'self'; frame-src 'self'; base-uri 'self'; form-action 'none'">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Gonca Arabacı | Computer Engineer & Software Developer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="#" class="logo">Gonca Arabacı</a>
+            <ul>
+                <li><a href="#experience">Experience</a></li>
+                <li><a href="#education">Education</a></li>
+                <li><a href="#projects">Projects</a></li>
+                <li><a href="#leadership">Leadership</a></li>
+                <li><a href="#skills">Skills</a></li>
+                <li><a href="#play">Playables</a></li>
+                <li><a href="#contact">Contact</a></li>
+            </ul>
+            <button id="theme-toggle" class="theme-switch-btn" title="Toggle theme" aria-label="Toggle theme">
+                <img id="switch-img" src="assets/switch_off.png" alt="Switch">
+            </button>
+        </div>
+    </nav>
+
+    <header id="hero">
+        <div class="hero-text">
+            <div class="hero-title">
+                <h1>Computer Engineer<br>& Software Developer</h1>
+                <!-- CV link at the left of the title (absolutely positioned, doesn't move the layout) -->
+                <button type="button" class="cv-pointer" id="cv-open" aria-haspopup="dialog">
+                    <span class="cv-paper">
+                        <img src="assets/paper.png" alt="" class="cv-paper-img">
+                        <span class="cv-label">MY CV</span>
+                    </span>
+                    <svg class="cv-arrow" viewBox="0 0 14 13" aria-hidden="true" shape-rendering="crispEdges"><defs><linearGradient id="cv-rainbow" x1="0" y1="0" x2="14" y2="13" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff3b3b"/><stop offset="0.2" stop-color="#ff9f1a"/><stop offset="0.4" stop-color="#ffe53b"/><stop offset="0.6" stop-color="#2ee06f"/><stop offset="0.8" stop-color="#3b8bff"/><stop offset="1" stop-color="#b44bff"/></linearGradient></defs><g fill="url(#cv-rainbow)"><rect x="11" y="0" width="2" height="1"/><rect x="11" y="1" width="2" height="1"/><rect x="11" y="2" width="2" height="1"/><rect x="11" y="3" width="2" height="1"/><rect x="11" y="4" width="2" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="11" y="5" width="2" height="1"/><rect x="2" y="6" width="2" height="1"/><rect x="11" y="6" width="2" height="1"/><rect x="1" y="7" width="3" height="1"/><rect x="11" y="7" width="2" height="1"/><rect x="0" y="8" width="13" height="1"/><rect x="0" y="9" width="13" height="1"/><rect x="1" y="10" width="3" height="1"/><rect x="2" y="11" width="2" height="1"/><rect x="3" y="12" width="1" height="1"/></g></svg>
+                </button>
+            </div>
+            <p>I studied Computer Engineering at Manisa Celal Bayar University. I write software in C#, Python and Java, mostly game systems in Unity and computer vision tools with OpenCV. In my last internship at Hifive Games I worked on event-driven architecture and runtime performance.</p>
+            <div class="hero-links">
+                <a href="#projects" class="btn">View Projects</a>
+                <a href="#contact" class="btn btn-outline">Contact</a>
+            </div>
+        </div>
+        <div class="polaroid">
+            <img class="polaroid-photo" src="assets/profile.jpg" alt="Gonca Arabacı">
+            <img class="polaroid-frame" src="assets/polaroid.png" alt="" aria-hidden="true">
+        </div>
+    </header>
+
+    <!-- CV popup -->
+    <div class="pm-overlay" id="cv-modal" hidden>
+        <div class="pm-dialog cv-dialog" role="dialog" aria-modal="true" aria-labelledby="cv-title">
+            <div class="cv-header">
+                <h3 id="cv-title">My CV</h3>
+                <div class="cv-actions">
+                    <a href="assets/CV_Software.pdf" download="Gonca-Arabaci-CV.pdf" class="btn">⬇ Download CV</a>
+                    <button type="button" class="pm-close cv-close" aria-label="Close">✕</button>
+                </div>
+            </div>
+            <object class="cv-frame" data="assets/CV_Software.pdf" type="application/pdf">
+                <div class="cv-fallback">
+                    <p>Your browser can't show the PDF here.</p>
+                    <a href="assets/CV_Software.pdf" target="_blank" rel="noopener" class="btn btn-outline">Open CV in a new tab ↗</a>
+                </div>
+            </object>
+        </div>
+    </div>
+
+    <section id="experience">
+        <h2>Experience</h2>
+        <div class="xp-list">
+            <div class="xp-item">
+                <div class="xp-head">
+                    <h3>Computer Engineering Intern · Hifive Games</h3>
+                    <span class="xp-date">Feb 2026 – Jun 2026</span>
+                </div>
+                <p class="xp-place">İstanbul</p>
+                <ul>
+                    <li>Built a modular, event-driven architecture in C# using EventBus messaging and the ServiceLocator pattern to keep systems decoupled and easier to maintain.</li>
+                    <li>Improved runtime performance with object pooling, lifecycle management and zero-allocation techniques.</li>
+                </ul>
+            </div>
+            <div class="xp-item">
+                <div class="xp-head">
+                    <h3>Computer Engineering Intern · Eps Teknoloji</h3>
+                    <span class="xp-date">Jul 2024 – Aug 2024</span>
+                </div>
+                <p class="xp-place">İzmir</p>
+                <ul>
+                    <li>Developed an industrial computer vision pipeline with OpenCV and Pypylon for automated fabric defect detection and dimensional measurement.</li>
+                    <li>Implemented shape and contour detection algorithms and set up secure remote access to Raspberry Pi–based vision systems through a NAT gateway.</li>
+                </ul>
+            </div>
+            <div class="xp-item">
+                <div class="xp-head">
+                    <h3>Computer Engineering Intern · Enm Digital</h3>
+                    <span class="xp-date">Mar 2024 – Jun 2024</span>
+                </div>
+                <p class="xp-place">Manisa</p>
+                <ul>
+                    <li>Worked on the frontend of AI-driven web applications, integrating AI features into the user interface and testing them.</li>
+                </ul>
+            </div>
+            <div class="xp-item">
+                <div class="xp-head">
+                    <h3>Computer Engineering Intern · Codeo</h3>
+                    <span class="xp-date">Aug 2023 – Sep 2023</span>
+                </div>
+                <p class="xp-place">İzmir</p>
+                <ul>
+                    <li>Built grid- and lock-based gameplay logic in Unity following SOLID principles.</li>
+                </ul>
+            </div>
+        </div>
+
+    </section>
+
+    <section id="education">
+        <h2>Education</h2>
+        <div class="xp-list">
+            <div class="xp-item">
+                <div class="xp-head">
+                    <h3>B.Sc. in Computer Engineering</h3>
+                    <span class="xp-date">Sep 2021 – Jun 2026</span>
+                </div>
+                <p class="xp-place">Manisa Celal Bayar University · GPA 3.39 / 4.0</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="projects">
+        <h2>Featured Projects</h2>
+        <p class="section-intro">A few projects I worked on. Click a card for details.</p>
+        <div class="repo-grid" id="featured-projects"></div>
+        <div class="see-all">
+            <a href="projects.html" class="btn">See All Projects →</a>
+        </div>
+    </section>
+
+    <section id="leadership">
+        <h2>Leadership</h2>
+        <div class="xp-list">
+            <div class="xp-item">
+                <div class="xp-head">
+                    <h3>Coordinator, Digital Greening with Youth</h3>
+                    <span class="xp-date">Erasmus+ KA152-YOU</span>
+                </div>
+                <p class="xp-place">Coordinated an international youth mobility programme with partners from 4 countries and a €24,320 budget. The programme ran digital-transformation workshops on environmental awareness.</p>
+            </div>
+            <div class="xp-item">
+                <div class="xp-head">
+                    <h3>Co-Lead, Oyun Tasarımı ve Geliştiricileri Topluluğu</h3>
+                    <span class="xp-date">Sep 2024 – Jan 2026</span>
+                </div>
+                <p class="xp-place">Organized 20+ events and 3 game jams, and managed GSB-funded projects.</p>
+            </div>
+            <div class="xp-item">
+                <div class="xp-head">
+                    <h3>Co-Lead, Dijital Oyun Geliştirme Ekibi</h3>
+                    <span class="xp-date">Nov 2023 – Sep 2024</span>
+                </div>
+                <p class="xp-place">Coordinated a student community focused on game development events.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="skills">
+        <h2>Skills</h2>
+        <div class="skills-grid">
+            <div class="card">
+                <h3>Languages</h3>
+                <div class="tags">
+                    <span>C#</span>
+                    <span>Python</span>
+                    <span>Java</span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Game Development</h3>
+                <div class="tags">
+                    <span>Unity</span>
+                    <span>ML-Agents</span>
+                    <span>Mirror Networking</span>
+                    <span>Object Pooling</span>
+                    <span>Event-Driven Architecture</span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Computer Vision</h3>
+                <div class="tags">
+                    <span>OpenCV</span>
+                    <span>Pypylon</span>
+                    <span>Digital Image Correlation</span>
+                    <span>Contour / Shape / Object Detection</span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Software Engineering</h3>
+                <div class="tags">
+                    <span>OOP</span>
+                    <span>SOLID</span>
+                    <span>Design Patterns</span>
+                    <span>Data Structures & Algorithms</span>
+                    <span>Agile / Scrum</span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Tools</h3>
+                <div class="tags">
+                    <span>Git</span>
+                    <span>Visual Studio</span>
+                    <span>VS Code</span>
+                    <span>Raspberry Pi</span>
+                    <span>Aseprite</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="play">
+        <h2>Playables</h2>
+        <div class="projects-list">
+            <div class="project-card">
+                <div class="project-info">
+                    <div class="project-header">
+                        <h3>Hexland</h3>
+                        <span class="badge">Live</span>
+                    </div>
+                    <p>A retro pixel-art strategy board game on a hexagonal island. Gather resources, build roads, settlements and cities, and race your friends to 10 victory points. Share a room link and everyone plays online from their own device.</p>
+                    <div class="tags">
+                        <span>HTML5 Canvas</span>
+                        <span>Vanilla JS</span>
+                        <span>Aseprite</span>
+                        <span>Web Audio</span>
+                    </div>
+                    <div class="project-links">
+                        <a href="games/hexland/index.html" target="_blank" rel="noopener" class="btn">🎮 Play</a>
+                    </div>
+                </div>
+            </div>
+            <div class="project-card muted">
+                <div class="project-info">
+                    <div class="project-header">
+                        <h3>Pixel Dungeon Arena</h3>
+                        <span class="badge wip">In Development</span>
+                    </div>
+                    <p>A pixel RPG arena where you battle your friends turn by turn across retro dungeon maps.</p>
+                    <div class="tags">
+                        <span>Canvas</span>
+                        <span>WebRTC</span>
+                        <span>Turn-Based</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="contact">
+        <h2>Contact</h2>
+        <div class="contact-grid">
+            <div class="card">
+                <h3>📧 Email</h3>
+                <p id="email-text">arabacigonca@gmail.com</p>
+                <button id="copy-email-btn" class="btn btn-outline btn-small">Copy</button>
+            </div>
+            <div class="card">
+                <h3>💼 LinkedIn</h3>
+                <p>linkedin.com/in/goncaarabaci</p>
+                <a href="https://www.linkedin.com/in/goncaarabaci" target="_blank" rel="noopener" class="btn btn-outline btn-small">Open Profile ↗</a>
+            </div>
+            <div class="card">
+                <h3>🐙 GitHub</h3>
+                <p>github.com/GoncaArabaci</p>
+                <a href="https://github.com/GoncaArabaci" target="_blank" rel="noopener" class="btn btn-outline btn-small">Open Profile ↗</a>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <p>© 2026 Gonca Arabacı. Hosted on GitHub Pages.</p>
+    </footer>
+
+    <script src="projects-data.js"></script>
+    <script src="projects-ui.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

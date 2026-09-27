@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; object-src 'self'; frame-src 'self'; base-uri 'self'; form-action 'none'">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>All Projects | Gonca Arabacı</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="index.html" class="logo">Gonca Arabacı</a>
+            <ul>
+                <li><a href="index.html#experience">Experience</a></li>
+                <li><a href="index.html#education">Education</a></li>
+                <li><a href="projects.html">Projects</a></li>
+                <li><a href="index.html#leadership">Leadership</a></li>
+                <li><a href="index.html#skills">Skills</a></li>
+                <li><a href="index.html#play">Playables</a></li>
+                <li><a href="index.html#contact">Contact</a></li>
+            </ul>
+            <button id="theme-toggle" class="theme-switch-btn" title="Toggle theme" aria-label="Toggle theme">
+                <img id="switch-img" src="assets/switch_off.png" alt="Switch">
+            </button>
+        </div>
+    </nav>
+
+    <section id="all-projects-section">
+        <a href="index.html#projects" class="back-link">← Back to home</a>
+        <h2>All Projects</h2>
+        <p class="section-intro">Games, computer vision, AI and app projects. Click a card for details. <a href="https://github.com/GoncaArabaci" target="_blank" rel="noopener">github.com/GoncaArabaci ↗</a></p>
+
+        <div class="project-filters">
+            <input type="search" id="project-search" placeholder="Search by name, description or technology..." aria-label="Search projects">
+
+            <div class="filter-row">
+                <span class="filter-label">Category</span>
+                <div class="chips" id="category-filters"></div>
+            </div>
+
+            <div class="filter-row">
+                <button type="button" id="clear-filters" class="chip">Clear filters</button>
+                <select id="sort-select" aria-label="Sort">
+                    <option value="new">Newest first</option>
+                    <option value="old">Oldest first</option>
+                    <option value="az">A → Z</option>
+                </select>
+            </div>
+        </div>
+
+        <p class="result-count" id="result-count"></p>
+        <div class="repo-grid" id="all-projects"></div>
+        <p class="empty-state" id="empty-state" hidden>No projects match your search.</p>
+    </section>
+
+    <footer>
+        <p>© 2026 Gonca Arabacı. Hosted on GitHub Pages.</p>
+    </footer>
+
+    <script src="projects-data.js"></script>
+    <script src="projects-ui.js"></script>
+    <script src="script.js"></script>
+    <script src="projects-page.js"></script>
+</body>
+</html>

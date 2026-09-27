@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Hexland ⚔️ Retro Web Board Game</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <!-- PeerJS 1.5.4 (WebRTC rooms), served from this site instead of a CDN.
+         Checked against the npm package: sha256 ad5d8870d1e389914f9cba8d35be313c4327c69ee0a221e482e9bf7621136fe5 -->
+    <script src="vendor/peerjs.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app-container">
+        <!-- Top Retro Header -->
+        <header id="game-header">
+            <div class="logo">
+                <span class="pixel-icon">🏝️</span>
+                <h1>HEXLAND</h1>
+            </div>
+            <div id="turn-indicator">
+                <span id="turn-banner">Hexland</span>
+                <span id="instruction-text" class="sub-text">Create or join a room to play.</span>
+            </div>
+            <div class="header-controls">
+                <button id="btn-room-share" class="pixel-btn header-btn">🌐 Room Link</button>
+                <button id="btn-mute" class="pixel-btn header-btn">🔊 Sound On</button>
+                <button id="btn-rules" class="pixel-btn header-btn">📜 Rules</button>
+            </div>
+        </header>
+
+        <!-- Main Game Area -->
+        <main id="main-content">
+            <!-- Board + my hand -->
+            <div id="board-column">
+                <div id="canvas-wrapper">
+                    <canvas id="hexland-canvas"></canvas>
+                </div>
+
+                <!-- My own cards: only this device's player sees them -->
+                <section id="hand-bar">
+                    <div class="hand-title">✋ <span id="hand-owner"></span></div>
+                    <div class="hand-cards">
+                        <div id="hand-resources" class="hand-group"></div>
+                        <div id="hand-dev-cards" class="hand-group"></div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Right Sidebar Controls -->
+            <aside id="game-sidebar">
+                <!-- Dice & Action Controls -->
+                <section class="panel-section dice-section">
+                    <div class="dice-box">
+                        <div class="die" id="die-1">?</div>
+                        <div class="die" id="die-2">?</div>
+                    </div>
+                    <button id="btn-roll" class="pixel-btn primary-btn pulse-glow">🎲 ROLL DICE</button>
+                </section>
+
+                <!-- Bank supply -->
+                <section class="panel-section">
+                    <div class="section-title flex-between">
+                        <span>🏦 Bank</span>
+                        <span class="bank-dev" title="Development cards left">🎴 <span id="bank-dev-count">25</span></span>
+                    </div>
+                    <div id="bank-resources" class="resources-grid">
+                        <!-- Populated by JS -->
+                    </div>
+                </section>
+
+                <!-- Building & Action Buttons -->
+                <section class="panel-section actions-section">
+                    <div class="section-title">🔨 Actions</div>
+                    <div class="actions-grid">
+                        <button id="btn-road" class="pixel-btn action-btn" title="Cost: 1 Wood, 1 Brick">
+                            🚧 Road
+                            <small class="cost-hint">🌲+🧱</small>
+                        </button>
+                        <button id="btn-settlement" class="pixel-btn action-btn" title="Cost: 1 Wood, 1 Brick, 1 Wool, 1 Grain">
+                            🏠 Settlement
+                            <small class="cost-hint">🌲+🧱+🐑+🌾</small>
+                        </button>
+                        <button id="btn-city" class="pixel-btn action-btn" title="Cost: 2 Grain, 3 Ore">
+                            🏰 City
+                            <small class="cost-hint">🌾🌾+⛏️⛏️⛏️</small>
+                        </button>
+                        <button id="btn-dev" class="pixel-btn action-btn" title="Cost: 1 Wool, 1 Grain, 1 Ore">
+                            🎴 Dev Card
+                            <small class="cost-hint">🐑+🌾+⛏️</small>
+                        </button>
+                    </div>
+                    <div class="secondary-actions">
+                        <button id="btn-trade" class="pixel-btn trade-btn">🤝 Trade / Harbor</button>
+                        <button id="btn-end-turn" class="pixel-btn end-turn-btn">⏭️ End Turn</button>
+                    </div>
+                </section>
+
+                <!-- Scoreboard -->
+                <section class="panel-section">
+                    <div class="section-title">🏆 Scoreboard (Goal: 10 VP)</div>
+                    <div id="players-list" class="players-scoreboard">
+                        <!-- Populated by JS -->
+                    </div>
+                </section>
+
+                <!-- Action Log -->
+                <section class="panel-section log-section">
+                    <div class="section-title">📜 Game Log</div>
+                    <div id="game-logs" class="terminal-logs">
+                        <!-- Populated by JS -->
+                    </div>
+                </section>
+            </aside>
+        </main>
+
+        <!-- LOBBY: create a room or join a friend's room -->
+        <div id="lobby-modal" class="modal-overlay active">
+            <div class="modal-box lobby-box">
+                <h2 id="lobby-title">👥 HEXLAND ONLINE</h2>
+                <p id="lobby-sub" class="lobby-sub">Loading...</p>
+
+                <div id="lobby-step-name" class="lobby-section">
+                    <label for="lobby-name">Your Name:</label>
+                    <input type="text" id="lobby-name" class="pixel-input" maxlength="16" placeholder="e.g. Gonca" autocomplete="off">
+                    <button type="button" id="btn-lobby-go" class="pixel-btn primary-btn pulse-glow" disabled>⏳ LOADING...</button>
+                </div>
+
+                <div id="lobby-step-room" hidden>
+                    <div class="lobby-section">
+                        <label>Room Link:</label>
+                        <div class="room-link-box">
+                            <input type="text" id="lobby-link" class="pixel-input" readonly>
+                            <button type="button" id="btn-lobby-copy" class="pixel-btn green-btn">Copy</button>
+                        </div>
+                    </div>
+                    <div class="lobby-section">
+                        <label>Players (<span id="lobby-count">1</span>/4):</label>
+                        <div id="lobby-players" class="player-inputs-list"></div>
+                    </div>
+                    <div class="lobby-footer">
+                        <button type="button" id="btn-start-game" class="pixel-btn primary-btn pulse-glow">⚔️ START GAME</button>
+                        <p id="lobby-wait" class="lobby-sub"></p>
+                    </div>
+                </div>
+
+                <p id="lobby-error" class="err-text"></p>
+            </div>
+        </div>
+
+        <!-- Lost connection to the host -->
+        <div id="connection-modal" class="modal-overlay">
+            <div class="modal-box">
+                <h3>📴 Connection Lost</h3>
+                <p>The connection to the host was lost. Reload the page to rejoin the same game.</p>
+                <button type="button" id="btn-reload" class="pixel-btn green-btn">🔄 Reload</button>
+            </div>
+        </div>
+
+        <!-- Room Share Modal -->
+        <div id="room-modal" class="modal-overlay">
+            <div class="modal-box">
+                <h3>🌐 Invite Your Friends</h3>
+                <p>Copy and send this link so your friends can join from their own phone or computer:</p>
+                <div class="room-link-box">
+                    <input type="text" id="room-link-input" class="pixel-input" readonly>
+                    <button id="btn-copy-room" class="pixel-btn green-btn">Copy</button>
+                </div>
+                <button id="btn-close-room" class="pixel-btn red-btn">Close</button>
+            </div>
+        </div>
+
+        <!-- Gameplay Modals -->
+        <div id="trade-modal" class="modal-overlay"></div>
+        <div id="dev-modal" class="modal-overlay"></div>
+        <div id="steal-modal" class="modal-overlay"></div>
+        <div id="discard-modal" class="modal-overlay"></div>
+        <div id="victory-modal" class="modal-overlay"></div>
+
+        <!-- Rules Modal -->
+        <div id="rules-modal" class="modal-overlay">
+            <div class="modal-box rules-box">
+                <h3>📜 HEXLAND RULES</h3>
+                <div class="rules-body">
+                    <p><strong>🎯 Goal:</strong> The first player to reach 10 Victory Points (VP) wins.</p>
+                    <p><strong>👥 Play with Friends:</strong> Everyone joins the room link on their own device. You can watch the board at any time, but you can only move on your turn. Your cards are only visible to you, in your hand at the bottom.</p>
+                    <p><strong>🏦 Bank:</strong> The bank holds 19 cards of each resource. Paid and discarded cards go back to it. If it can't pay everyone a resource, nobody gets that resource.</p>
+                    <p><strong>🏠 Points:</strong> Settlement = 1 VP, City = 2 VP, Longest Road (min 5) = 2 VP, Largest Army (min 3 knights) = 2 VP, Victory Point Card = 1 VP.</p>
+                    <p><strong>🎲 Dice & Harvest:</strong> When the dice total matches a tile's number, owners of adjacent settlements/cities collect resources (cities give 2x).</p>
+                    <p><strong>🦹 Rolling a 7:</strong> Everyone holding more than 7 cards discards half. The current player moves the robber and steals 1 card from a neighbor.</p>
+                </div>
+                <button id="close-rules-btn" class="pixel-btn red-btn">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <!-- Plain scripts (not ES modules) so the game also runs when opened from disk -->
+    <script src="src/config.js"></script>
+    <script src="src/net.js"></script>
+    <script src="src/audio.js"></script>
+    <script src="src/pixelAssets.js"></script>
+    <script src="src/boardMath.js"></script>
+    <script src="src/rules.js"></script>
+    <script src="src/ai.js"></script>
+    <script src="src/renderer.js"></script>
+    <script src="src/ui.js"></script>
+    <script src="src/main.js"></script>
+</body>
+</html>
