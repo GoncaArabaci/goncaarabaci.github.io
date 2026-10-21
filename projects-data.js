@@ -22,6 +22,7 @@ const PROJECTS = [
             "Event-bus architecture, A* pathfinding and JSON save system (~150 C# scripts)",
             "Outdoor scenery generated procedurally with Blender Python scripts"
         ],
+        role: "Worked on both the programming and the art: wrote gameplay systems in C#, created 3D models in Blender, then imported them into Unity, set them up and placed them in the scenes.",
         category: "Game",
         tags: ["C#", "Unity", "URP", "Blender", "Game Jam"],
         featured: true,
