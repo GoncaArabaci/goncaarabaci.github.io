@@ -441,60 +441,167 @@ class HexlandApp {
         return this.started && this.game.turnIndex === this.mySeat && this.game.phase !== 'GAME_OVER';
     }
 
-    bindCanvasEvents() {
-        this.canvas.addEventListener('mousemove', (e) => {
-            const rect = this.canvas.getBoundingClientRect();
-            const world = this.renderer.toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    // ---------- Placing pieces ----------
+    // Pieces snap to the nearest legal corner/edge near the pointer. They can be
+    // dragged from the hand bar and dropped on the board, or placed with a click.
 
-            this.renderer.hoverVertex = this.board.getNearestVertex(world.x, world.y, 22);
-            this.renderer.hoverEdge = this.board.getNearestEdge(world.x, world.y, 20);
-            this.renderer.hoverHex = this.board.getNearestHex(world.x, world.y);
-        });
-
-        this.canvas.addEventListener('mouseleave', () => {
-            this.renderer.hoverVertex = null;
-            this.renderer.hoverEdge = null;
-            this.renderer.hoverHex = null;
-        });
-
-        this.canvas.addEventListener('click', (e) => {
-            const rect = this.canvas.getBoundingClientRect();
-            const world = this.renderer.toWorld(e.clientX - rect.left, e.clientY - rect.top);
-            this.handleCanvasClick(world);
-        });
+    placementKind() {
+        if (!this.isMyTurn()) return null;
+        if (this.drag) return this.drag.kind;
+        const phase = this.game.phase;
+        if (phase === 'SETUP_SETTLEMENT_1' || phase === 'SETUP_SETTLEMENT_2') return 'settlement';
+        if (phase === 'SETUP_ROAD_1' || phase === 'SETUP_ROAD_2') return 'road';
+        const mode = this.renderer.activeMode;
+        if (mode === 'build_settlement') return 'settlement';
+        if (mode === 'build_city') return 'city';
+        if (mode === 'build_road') return 'road';
+        return null;
     }
 
-    handleCanvasClick(world) {
-        // Watching only: nothing happens on other players' turns
-        if (!this.isMyTurn()) return;
+    // Can this piece be picked up right now?
+    canPlace(kind) {
+        if (!this.isMyTurn()) return false;
+        const g = this.game;
+        const me = g.players[this.mySeat];
+        const phase = g.phase;
+        const building = phase === 'ACTION' && g.diceRolled;
 
-        const phase = this.game.phase;
-        const mode = this.renderer.activeMode;
-        const nearestV = () => this.board.getNearestVertex(world.x, world.y, 24);
-        const nearestE = () => this.board.getNearestEdge(world.x, world.y, 24);
-
-        if (phase === 'SETUP_SETTLEMENT_1' || phase === 'SETUP_SETTLEMENT_2') {
-            const v = nearestV();
-            if (v) this.dispatch('build_settlement', { vertexId: v.id });
-        } else if (phase === 'SETUP_ROAD_1' || phase === 'SETUP_ROAD_2') {
-            const e = nearestE();
-            if (e) this.dispatch('build_road', { edgeId: e.id });
-        } else if (phase === 'ROBBER_MOVE') {
-            const hex = this.board.getNearestHex(world.x, world.y);
-            if (hex) this.dispatch('move_robber', { hexId: hex.id });
-        } else if (mode === 'build_settlement') {
-            const v = nearestV();
-            if (v) { this.dispatch('build_settlement', { vertexId: v.id }); this.renderer.activeMode = null; }
-        } else if (mode === 'build_city') {
-            const v = nearestV();
-            if (v) { this.dispatch('build_city', { vertexId: v.id }); this.renderer.activeMode = null; }
-        } else if (mode === 'build_road') {
-            const e = nearestE();
-            if (e) {
-                this.dispatch('build_road', { edgeId: e.id });
-                if (this.game.freeRoads <= 1) this.renderer.activeMode = null;
-            }
+        if (kind === 'settlement') {
+            if (phase === 'SETUP_SETTLEMENT_1' || phase === 'SETUP_SETTLEMENT_2') return true;
+            return building && me.settlementsLeft > 0 && g.hasResources(me.id, COSTS.settlement);
         }
+        if (kind === 'road') {
+            if (phase === 'SETUP_ROAD_1' || phase === 'SETUP_ROAD_2') return true;
+            if (phase === 'ACTION' && g.freeRoads > 0) return true;
+            return building && me.roadsLeft > 0 && g.hasResources(me.id, COSTS.road);
+        }
+        if (kind === 'city') return building && me.citiesLeft > 0 && g.hasResources(me.id, COSTS.city);
+        return false;
+    }
+
+    // Nearest legal spot for a piece, within a forgiving radius
+    findTarget(kind, world) {
+        const b = this.board;
+        const g = this.game;
+        const pid = g.turnIndex;
+        const isSetup = g.phase.startsWith('SETUP');
+        let best = null;
+        let bestDist = kind === 'road' ? 32 : 40;
+
+        if (kind === 'road') {
+            const from = isSetup ? g.lastSetupVertexId : null;
+            b.edges.forEach(e => {
+                if (!b.canBuildRoad(e.id, pid, from)) return;
+                const d = BoardGraph.distanceToSegment(world.x, world.y, b.vertices[e.v1], b.vertices[e.v2]);
+                if (d < bestDist) { bestDist = d; best = e.id; }
+            });
+        } else {
+            b.vertices.forEach(v => {
+                const ok = kind === 'city' ? b.canBuildCity(v.id, pid) : b.canBuildSettlement(v.id, pid, isSetup);
+                if (!ok) return;
+                const d = Math.hypot(v.x - world.x, v.y - world.y);
+                if (d < bestDist) { bestDist = d; best = v.id; }
+            });
+        }
+        return best;
+    }
+
+    pointerOnCanvas(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const inside = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height;
+        return { x, y, inside, world: this.renderer.toWorld(x, y) };
+    }
+
+    updatePreview(e) {
+        const kind = this.placementKind();
+        if (!kind) {
+            this.renderer.preview = null;
+            return;
+        }
+        const p = this.pointerOnCanvas(e);
+        this.renderer.preview = {
+            kind,
+            target: p.inside ? this.findTarget(kind, p.world) : null,
+            x: p.x,
+            y: p.y,
+            dragging: !!this.drag && p.inside
+        };
+    }
+
+    placePiece(kind, target) {
+        if (kind === 'road') {
+            this.dispatch('build_road', { edgeId: target });
+            const setup = this.game.phase.startsWith('SETUP');
+            if (!setup && this.game.freeRoads <= 1) this.renderer.activeMode = null;
+        } else if (kind === 'city') {
+            this.dispatch('build_city', { vertexId: target });
+            this.renderer.activeMode = null;
+        } else {
+            this.dispatch('build_settlement', { vertexId: target });
+            this.renderer.activeMode = null;
+        }
+        this.renderer.preview = null;
+    }
+
+    bindCanvasEvents() {
+        this.canvas.addEventListener('pointermove', (e) => {
+            const p = this.pointerOnCanvas(e);
+            this.renderer.hoverHex = this.board.getNearestHex(p.world.x, p.world.y);
+            if (!this.drag) this.updatePreview(e);
+        });
+
+        this.canvas.addEventListener('pointerleave', () => {
+            this.renderer.hoverHex = null;
+            if (!this.drag) this.renderer.preview = null;
+        });
+
+        // Click to place (or to move the robber)
+        this.canvas.addEventListener('click', (e) => {
+            if (!this.isMyTurn()) return;
+            const p = this.pointerOnCanvas(e);
+
+            if (this.game.phase === 'ROBBER_MOVE') {
+                const hex = this.board.getNearestHex(p.world.x, p.world.y);
+                if (hex) this.dispatch('move_robber', { hexId: hex.id });
+                return;
+            }
+
+            const kind = this.placementKind();
+            if (!kind) return;
+            const target = this.findTarget(kind, p.world);
+            if (target !== null) this.placePiece(kind, target);
+        });
+
+        // Drag a piece from the hand bar onto the board
+        const pieces = document.getElementById('hand-pieces');
+        pieces.addEventListener('pointerdown', (e) => {
+            const el = e.target.closest('[data-piece]');
+            if (!el) return;
+            const kind = el.dataset.piece;
+            if (!this.canPlace(kind)) return;
+            e.preventDefault();
+            this.drag = { kind };
+            this.renderer.activeMode = null;
+            document.body.classList.add('is-dragging');
+            this.updatePreview(e);
+        });
+
+        document.addEventListener('pointermove', (e) => {
+            if (this.drag) this.updatePreview(e);
+        });
+
+        document.addEventListener('pointerup', (e) => {
+            if (!this.drag) return;
+            const kind = this.drag.kind;
+            const p = this.pointerOnCanvas(e);
+            const target = p.inside ? this.findTarget(kind, p.world) : null;
+            this.drag = null;
+            document.body.classList.remove('is-dragging');
+            if (target !== null && this.canPlace(kind)) this.placePiece(kind, target);
+            else this.renderer.preview = null;
+        });
     }
 
     startLoop() {

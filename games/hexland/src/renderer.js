@@ -15,6 +15,9 @@ class HexlandRenderer {
         this.hoverHex = null;
         this.activeMode = null; // 'build_settlement', 'build_road', 'build_city', 'robber_move', null
 
+        // Piece being placed: { kind, target, x, y, dragging } (set by the app on pointer moves)
+        this.preview = null;
+
         // Floating popups
         this.popups = [];
 
@@ -25,11 +28,17 @@ class HexlandRenderer {
         this.ctx.imageSmoothingEnabled = false;
         this.resize();
         window.addEventListener('resize', () => this.resize());
+        // The board area also changes size when the hand bar fills up. Without this the
+        // canvas got stretched and clicks landed on the wrong corner or edge.
+        if (window.ResizeObserver) {
+            new ResizeObserver(() => this.resize()).observe(this.canvas.parentElement);
+        }
     }
 
     resize() {
         const dpr = window.devicePixelRatio || 1;
         const rect = this.canvas.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
 
         this.width = rect.width;
         this.height = rect.height;
@@ -37,7 +46,7 @@ class HexlandRenderer {
         this.canvas.width = this.width * dpr;
         this.canvas.height = this.height * dpr;
 
-        this.ctx.scale(dpr, dpr);
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         this.ctx.imageSmoothingEnabled = false;
 
         // Origin at center
@@ -71,6 +80,10 @@ class HexlandRenderer {
     }
 
     render() {
+        // Safety net: if the board area changed size, match the canvas to it
+        if (Math.abs(this.canvas.clientWidth - this.width) > 1 || Math.abs(this.canvas.clientHeight - this.height) > 1) {
+            this.resize();
+        }
         this.ctx.clearRect(0, 0, this.width, this.height);
 
         // 1. Draw Ocean Background
@@ -91,8 +104,9 @@ class HexlandRenderer {
         // 6. Draw Robber
         this.drawRobber();
 
-        // 7. Draw Interaction Overlays (Build Spots & Hover)
+        // 7. Robber targets, then the piece being placed
         this.drawInteractionOverlays();
+        this.drawPreview();
 
         // 8. Draw Floating Popups
         this.drawPopups();
@@ -273,22 +287,7 @@ class HexlandRenderer {
                 const p2 = this.toScreen(v2.x, v2.y);
                 const player = this.game.players[edge.road.owner];
 
-                // Road outline
-                ctx.strokeStyle = '#1e293b';
-                ctx.lineWidth = 8;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
-
-                // Road color
-                ctx.strokeStyle = player.color.hex;
-                ctx.lineWidth = 5;
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
+                this.drawRoadLine(p1, p2, player.color.hex);
             }
         });
     }
@@ -310,7 +309,21 @@ class HexlandRenderer {
         });
     }
 
+    // A custom Aseprite PNG replaces the drawn piece; a player-colored base shows the owner
+    drawCustomPiece(key, x, y, color, size) {
+        const sprite = pixelAssets.getImage(key);
+        if (!(sprite instanceof HTMLImageElement)) return false;
+        const ctx = this.ctx;
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(x - size / 2 - 2, y + size / 2 - 5, size + 4, 6);
+        ctx.fillStyle = color;
+        ctx.fillRect(x - size / 2, y + size / 2 - 3, size, 3);
+        ctx.drawImage(sprite, x - size / 2, y - size / 2 - 4, size, size);
+        return true;
+    }
+
     drawSettlement(x, y, color) {
+        if (this.drawCustomPiece('settlement', x, y, color, 28)) return;
         const ctx = this.ctx;
         const size = 12;
 
@@ -347,6 +360,7 @@ class HexlandRenderer {
     }
 
     drawCity(x, y, color) {
+        if (this.drawCustomPiece('city', x, y, color, 36)) return;
         const ctx = this.ctx;
         const size = 18;
 
@@ -387,75 +401,8 @@ class HexlandRenderer {
         // Build spots only show on the device whose turn it is
         if (!this.interactive) return;
         const ctx = this.ctx;
-        const pId = this.game.getCurrentPlayer().id;
 
-        const isSetup = this.game.phase.startsWith('SETUP');
-        const isRoadSetup = this.game.phase === 'SETUP_ROAD_1' || this.game.phase === 'SETUP_ROAD_2';
-        const isSettlementSetup = this.game.phase === 'SETUP_SETTLEMENT_1' || this.game.phase === 'SETUP_SETTLEMENT_2';
-
-        // 1. Settlement Placement Mode
-        if (this.activeMode === 'build_settlement' || isSettlementSetup) {
-            this.board.vertices.forEach(v => {
-                if (this.board.canBuildSettlement(v.id, pId, isSetup)) {
-                    const pt = this.toScreen(v.x, v.y);
-                    const isHovered = this.hoverVertex && this.hoverVertex.id === v.id;
-
-                    ctx.fillStyle = isHovered ? '#2ecc71' : 'rgba(46, 204, 113, 0.6)';
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(pt.x, pt.y, isHovered ? 8 : 6, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.stroke();
-                }
-            });
-        }
-
-        // 2. City Placement Mode
-        if (this.activeMode === 'build_city') {
-            this.board.vertices.forEach(v => {
-                if (this.board.canBuildCity(v.id, pId)) {
-                    const pt = this.toScreen(v.x, v.y);
-                    const isHovered = this.hoverVertex && this.hoverVertex.id === v.id;
-
-                    ctx.fillStyle = isHovered ? '#f1c40f' : 'rgba(241, 196, 15, 0.7)';
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(pt.x, pt.y, isHovered ? 10 : 8, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.stroke();
-                }
-            });
-        }
-
-        // 3. Road Placement Mode
-        if (this.activeMode === 'build_road' || isRoadSetup) {
-            this.board.edges.forEach(edge => {
-                const canBuild = this.board.canBuildRoad(
-                    edge.id,
-                    pId,
-                    isSetup ? this.game.lastSetupVertexId : null
-                );
-
-                if (canBuild) {
-                    const v1 = this.board.vertices[edge.v1];
-                    const v2 = this.board.vertices[edge.v2];
-                    const p1 = this.toScreen(v1.x, v1.y);
-                    const p2 = this.toScreen(v2.x, v2.y);
-                    const isHovered = this.hoverEdge && this.hoverEdge.id === edge.id;
-
-                    ctx.strokeStyle = isHovered ? '#2ecc71' : 'rgba(46, 204, 113, 0.6)';
-                    ctx.lineWidth = isHovered ? 7 : 4;
-                    ctx.beginPath();
-                    ctx.moveTo(p1.x, p1.y);
-                    ctx.lineTo(p2.x, p2.y);
-                    ctx.stroke();
-                }
-            });
-        }
-
-        // 4. Robber Move Mode
+        // Robber Move Mode
         if (this.game.phase === 'ROBBER_MOVE') {
             this.board.hexes.forEach(hex => {
                 if (hex.id !== this.board.robberHexId) {
@@ -477,6 +424,69 @@ class HexlandRenderer {
                 }
             });
         }
+    }
+
+    drawRoadLine(p1, p2, color) {
+        const ctx = this.ctx;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+    }
+
+    // Ghost of the piece being placed: snapped to the nearest legal spot,
+    // or following the pointer while dragging when no spot is close enough
+    drawPreview() {
+        const p = this.preview;
+        if (!p || !this.interactive) return;
+        const color = this.game.getCurrentPlayer().color.hex;
+        const ctx = this.ctx;
+
+        ctx.save();
+        if (p.target !== null && p.target !== undefined) {
+            ctx.globalAlpha = 0.75 + 0.15 * Math.sin(Date.now() / 250);
+            if (p.kind === 'road') {
+                const e = this.board.edges[p.target];
+                const v1 = this.board.vertices[e.v1];
+                const v2 = this.board.vertices[e.v2];
+                this.drawRoadLine(this.toScreen(v1.x, v1.y), this.toScreen(v2.x, v2.y), color);
+            } else {
+                const v = this.board.vertices[p.target];
+                const pt = this.toScreen(v.x, v.y);
+                if (p.kind === 'city') this.drawCity(pt.x, pt.y, color);
+                else this.drawSettlement(pt.x, pt.y, color);
+            }
+        } else if (p.dragging) {
+            ctx.globalAlpha = 0.45;
+            if (p.kind === 'road') this.drawRoadLine({ x: p.x - 20, y: p.y + 10 }, { x: p.x + 20, y: p.y - 10 }, color);
+            else if (p.kind === 'city') this.drawCity(p.x, p.y, color);
+            else this.drawSettlement(p.x, p.y, color);
+        }
+        ctx.restore();
+    }
+
+    // Small icon of a piece for the hand bar
+    drawPieceIcon(canvas, kind, color) {
+        const main = this.ctx;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        this.ctx = ctx;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        if (kind === 'road') this.drawRoadLine({ x: cx - 12, y: cy + 8 }, { x: cx + 12, y: cy - 8 }, color);
+        else if (kind === 'city') this.drawCity(cx, cy + 6, color);
+        else this.drawSettlement(cx, cy + 5, color);
+        this.ctx = main;
     }
 
     drawPopups() {

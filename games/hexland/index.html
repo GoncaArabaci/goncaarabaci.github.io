@@ -3,12 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'self'; form-action 'none'">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <title>Hexland ⚔️ Retro Web Board Game</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/fonts/fonts.css">
     <!-- PeerJS 1.5.4 (WebRTC rooms), served from this site instead of a CDN.
          Checked against the npm package: sha256 ad5d8870d1e389914f9cba8d35be313c4327c69ee0a221e482e9bf7621136fe5 -->
     <script src="vendor/peerjs.min.js"></script>
@@ -45,6 +43,7 @@
                 <section id="hand-bar">
                     <div class="hand-title">✋ <span id="hand-owner"></span></div>
                     <div class="hand-cards">
+                        <div id="hand-pieces" class="hand-group"></div>
                         <div id="hand-resources" class="hand-group"></div>
                         <div id="hand-dev-cards" class="hand-group"></div>
                     </div>

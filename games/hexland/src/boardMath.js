@@ -303,15 +303,21 @@ class BoardGraph {
         for (const edge of this.edges) {
             const v1 = this.vertices[edge.v1];
             const v2 = this.vertices[edge.v2];
-            const midX = (v1.x + v2.x) / 2;
-            const midY = (v1.y + v2.y) / 2;
-            const dist = Math.hypot(midX - x, midY - y);
+            const dist = BoardGraph.distanceToSegment(x, y, v1, v2);
             if (dist < minDist) {
                 minDist = dist;
                 nearest = edge;
             }
         }
         return nearest;
+    }
+
+    static distanceToSegment(x, y, a, b) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len2 = dx * dx + dy * dy || 1;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2));
+        return Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
     }
 
     // Find nearest hex for robber movement click

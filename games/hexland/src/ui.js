@@ -40,6 +40,7 @@ class HexlandUI {
         this.bankDevCount = document.getElementById('bank-dev-count');
         this.handResources = document.getElementById('hand-resources');
         this.handDevCards = document.getElementById('hand-dev-cards');
+        this.handPieces = document.getElementById('hand-pieces');
         this.handOwner = document.getElementById('hand-owner');
         this.playersList = document.getElementById('players-list');
         this.logContainer = document.getElementById('game-logs');
@@ -292,8 +293,8 @@ class HexlandUI {
             return `${name} is building and trading. Watch the board!`;
         }
 
-        if (phase === 'SETUP_SETTLEMENT_1' || phase === 'SETUP_SETTLEMENT_2') return 'Place a SETTLEMENT on one of the green dots.';
-        if (phase === 'SETUP_ROAD_1' || phase === 'SETUP_ROAD_2') return 'Build a ROAD connected to your settlement.';
+        if (phase === 'SETUP_SETTLEMENT_1' || phase === 'SETUP_SETTLEMENT_2') return 'Drag a SETTLEMENT from your hand onto a corner (or click a corner).';
+        if (phase === 'SETUP_ROAD_1' || phase === 'SETUP_ROAD_2') return 'Drag a ROAD next to your new settlement (or click an edge).';
         if (phase === 'ROBBER_MOVE') return '🦹 Click the tile where you want to place the robber!';
         if (phase === 'ROBBER_STEAL') return 'Choose a player to steal a card from.';
         if (this.game.freeRoads > 0) return `🚧 Place ${this.game.freeRoads} free road${this.game.freeRoads > 1 ? 's' : ''}.`;
@@ -343,8 +344,11 @@ class HexlandUI {
             this.handOwner.textContent = '';
             this.handResources.innerHTML = '';
             this.handDevCards.innerHTML = '';
+            this.handPieces.innerHTML = '';
             return;
         }
+
+        this.renderPieces(me);
 
         this.handOwner.textContent = `${me.name}'s hand`;
         this.handOwner.style.color = me.color.light;
@@ -368,6 +372,40 @@ class HexlandUI {
                 <span class="hand-card-count">${n}</span>
             </div>
         `).join('');
+    }
+
+    // Draggable pieces: settlement, city, road
+    renderPieces(me) {
+        const app = window.hexlandApp;
+        const pieces = [
+            { kind: 'settlement', name: 'Settlement', left: me.settlementsLeft },
+            { kind: 'city', name: 'City', left: me.citiesLeft },
+            { kind: 'road', name: 'Road', left: me.roadsLeft }
+        ];
+        this.handPieces.innerHTML = '';
+        pieces.forEach(p => {
+            const ready = app && app.canPlace(p.kind);
+            const el = document.createElement('div');
+            el.className = `hand-card piece-card ${ready ? 'is-ready' : 'is-empty'}`;
+            el.dataset.piece = p.kind;
+            el.title = ready ? `Drag onto the board to place a ${p.name.toLowerCase()}` : p.name;
+
+            const icon = document.createElement('canvas');
+            icon.width = 44;
+            icon.height = 40;
+            icon.className = 'piece-icon';
+            this.renderer.drawPieceIcon(icon, p.kind, me.color.hex);
+
+            const name = document.createElement('span');
+            name.className = 'hand-card-name';
+            name.textContent = p.name;
+            const count = document.createElement('span');
+            count.className = 'hand-card-count';
+            count.textContent = p.left;
+
+            el.append(icon, name, count);
+            this.handPieces.appendChild(el);
+        });
     }
 
     renderScoreboard() {

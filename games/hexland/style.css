@@ -844,3 +844,34 @@ body {
 .pick-btn { font-size: 8px; padding: 10px 6px; }
 .pick-status { font-size: 10px; min-height: 14px; }
 
+
+/* Draggable pieces in the hand bar */
+#hand-pieces {
+    padding-right: 18px;
+    border-right: 3px dashed #334155;
+}
+
+.piece-card {
+    background: linear-gradient(180deg, #334155, #1e293b);
+    color: #f8fafc;
+    touch-action: none;
+}
+
+.piece-card.is-ready {
+    cursor: grab;
+    box-shadow: 3px 3px 0 #000, 0 0 0 2px var(--accent-gold);
+}
+
+.piece-icon {
+    width: 44px;
+    height: 40px;
+    image-rendering: pixelated;
+}
+
+body.is-dragging,
+body.is-dragging * { cursor: grabbing !important; }
+
+#hexland-canvas { touch-action: none; }
+
+.piece-card { width: 78px; }
+.piece-card .hand-card-name { font-size: 6px; }

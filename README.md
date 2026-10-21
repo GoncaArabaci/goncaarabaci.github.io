@@ -40,7 +40,7 @@ Then open http://localhost:8000/.
 ## Credits
 
 - [PeerJS](https://peerjs.com/) 1.5.4, MIT License (see `games/hexland/vendor/PEERJS-LICENSE.txt`)
-- Fonts: [Inter](https://fonts.google.com/specimen/Inter) and [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) via Google Fonts
+- Fonts: [Inter](https://rsms.me/inter/) and [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P), SIL Open Font License 1.1, self-hosted in `assets/fonts/` (see the `OFL-*.txt` files there)
 
 ## License
 
