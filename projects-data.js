@@ -7,6 +7,27 @@
 // highlights / role are optional and only shown in the detail popup.
 const PROJECTS = [
     {
+        slug: "aftershock-isle",
+        team: true,
+        title: "Aftershock: Isle",
+        icon: "🏚️",
+        images: ["aftershock-isle-1.jpg", "aftershock-isle-2.jpg", "aftershock-isle-3.jpg", "aftershock-isle-4.jpg", "aftershock-isle-5.jpg", "aftershock-isle-6.jpg"],
+        summary: "A 2.5D survival base-builder: keep a cracked building standing after an earthquake until the evacuation helicopter arrives.",
+        description: "Aftershock: Isle is a side-view crisis management and survival game set in a city hit by an earthquake, made with PBH Studio for a game jam in October 2026. Survivors shelter in a four-storey building seen in cross-section. Each day has three phases: in the morning they dig rubble, brace columns and craft at the workbench; at midday one of them heads out to scavenge the city; at night the shelter faces aftershocks, flooding, fires and raids. To win, you upgrade the workbench, repair the rooftop radio and hold the evacuation signal before the building's structural integrity runs out.",
+        highlights: [
+            "Structural integrity system: aftershocks, water and fire wear the building down, braced columns hold it up",
+            "Disaster director that schedules aftershocks, floods, fires, gas leaks and night raids",
+            "Active pause, survivor tasks, evening plan and a 3-branch skill tree",
+            "City-map expeditions with a weight-based backpack, cover-based combat and six locations",
+            "Event-bus architecture, A* pathfinding and JSON save system (~150 C# scripts)",
+            "Outdoor scenery generated procedurally with Blender Python scripts"
+        ],
+        category: "Game",
+        tags: ["C#", "Unity", "URP", "Blender", "Game Jam"],
+        featured: true,
+        year: 2026
+    },
+    {
         slug: "stratis",
         team: true,
         title: "STRATIS",
