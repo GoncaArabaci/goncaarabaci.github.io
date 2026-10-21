@@ -875,3 +875,61 @@ body.is-dragging * { cursor: grabbing !important; }
 
 .piece-card { width: 78px; }
 .piece-card .hand-card-name { font-size: 6px; }
+
+/* Drawn dice faces (assets/images/dice_1.png ... dice_6.png) */
+.die.die-face {
+    background: center / contain no-repeat;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    image-rendering: pixelated;
+}
+
+.die.rolling { animation: die-tumble 0.12s steps(2) infinite; }
+
+@keyframes die-tumble {
+    0%   { transform: rotate(-12deg) translateY(-2px); }
+    100% { transform: rotate(12deg) translateY(1px); }
+}
+
+/* Drawn resource cards: the art already has its own frame */
+.hand-card.art-card {
+    width: 63px;
+    height: 96px;
+    border: none;
+    box-shadow: none;
+    background: center / auto 100% no-repeat;
+    image-rendering: pixelated;
+    filter: drop-shadow(3px 3px 0 #000);
+}
+
+.hand-card.art-card .hand-card-icon,
+.hand-card.art-card .hand-card-name { display: none; }
+
+.hand-card.art-card.res-wood  { background-image: url(assets/images/card_forest.png); }
+.hand-card.art-card.res-brick { background-image: url(assets/images/card_hills.png); }
+.hand-card.art-card.res-sheep { background-image: url(assets/images/card_pasture.png); }
+.hand-card.art-card.res-wheat { background-image: url(assets/images/card_fields.png); }
+.hand-card.art-card.res-ore   { background-image: url(assets/images/card_stone.png); }
+
+/* Development cards show the drawn card back, with the name underneath */
+.dev-hand-card {
+    width: 63px;
+    height: 96px;
+    border: none;
+    box-shadow: none;
+    background: url(assets/images/card.png) center / auto 100% no-repeat;
+    image-rendering: pixelated;
+    filter: drop-shadow(3px 3px 0 #000);
+    justify-content: flex-end;
+    padding-bottom: 8px;
+}
+
+.dev-hand-card .hand-card-icon { display: none; }
+
+.dev-hand-card .hand-card-name {
+    background: rgba(15, 23, 42, 0.85);
+    color: #fff;
+    padding: 3px 4px;
+    max-width: 52px;
+}

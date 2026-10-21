@@ -254,8 +254,10 @@ class HexlandUI {
             if (this.devModal.classList.contains('active') && !this.devModal.dataset.picking) this.openDevModal();
         }
 
-        this.die1El.textContent = game.dice[0];
-        this.die2El.textContent = game.dice[1];
+        if (!this.diceRolling) {
+            this.showDie(this.die1El, game.dice[0]);
+            this.showDie(this.die2El, game.dice[1]);
+        }
 
         this.updateButtons();
         this.renderBank();
@@ -269,6 +271,39 @@ class HexlandUI {
         } else if (!game.winner) {
             this.victoryModal.classList.remove('active');
         }
+    }
+
+    // Dice faces come from assets/images/dice_1.png ... dice_6.png
+    showDie(el, n) {
+        const face = Number.isInteger(n) && n >= 1 && n <= 6;
+        el.classList.toggle('die-face', face);
+        el.style.backgroundImage = face ? `url(assets/images/dice_${n}.png)` : '';
+        el.textContent = face ? '' : '?';
+        el.setAttribute('aria-label', face ? `Die: ${n}` : 'Die');
+    }
+
+    // Short tumble before landing on the rolled faces
+    animateDiceRoll() {
+        if (this.diceRolling) return;
+        this.diceRolling = true;
+        this.die1El.classList.add('rolling');
+        this.die2El.classList.add('rolling');
+        let frame = 0;
+        const rand = () => 1 + Math.floor(Math.random() * 6);
+        const tick = () => {
+            if (frame++ < 8) {
+                this.showDie(this.die1El, rand());
+                this.showDie(this.die2El, rand());
+                setTimeout(tick, 55);
+                return;
+            }
+            this.diceRolling = false;
+            this.die1El.classList.remove('rolling');
+            this.die2El.classList.remove('rolling');
+            this.showDie(this.die1El, this.game.dice[0]);
+            this.showDie(this.die2El, this.game.dice[1]);
+        };
+        tick();
     }
 
     getInstruction(myTurn, curPlayer) {
@@ -356,7 +391,7 @@ class HexlandUI {
         this.handResources.innerHTML = Object.entries(RESOURCE_NAMES).map(([key, name]) => {
             const count = me.resources[key] || 0;
             return `
-                <div class="hand-card res-${key} ${count === 0 ? 'is-empty' : ''}" title="${name}">
+                <div class="hand-card art-card res-${key} ${count === 0 ? 'is-empty' : ''}" title="${name}">
                     <span class="hand-card-icon">${RESOURCE_ICONS[key]}</span>
                     <span class="hand-card-name">${name}</span>
                     <span class="hand-card-count">${count}</span>

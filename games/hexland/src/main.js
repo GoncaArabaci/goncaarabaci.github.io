@@ -407,6 +407,7 @@ class HexlandApp {
                 }
             } else if (ev.type === 'roll') {
                 soundFX.playDiceRoll();
+                this.ui.animateDiceRoll();
                 if (ev.sum === 7) {
                     soundFX.playRobber();
                 } else {
