@@ -27,11 +27,7 @@ class BoardGraph {
         const dx = BOARD_CONFIG.spacingX;
         const dy = BOARD_CONFIG.spacingY;
 
-        // Shuffle terrains & numbers (fair distribution)
-        const terrains = [...STANDARD_TERRAINS].sort(() => Math.random() - 0.5);
-        const numbers = [...STANDARD_NUMBERS].sort(() => Math.random() - 0.5);
-
-        let numIdx = 0;
+        const terrains = shuffled(STANDARD_TERRAINS);
         let hexId = 0;
 
         // Create Hexes
@@ -42,15 +38,7 @@ class BoardGraph {
                 const y = (r - 2) * dy;
                 const terrainKey = terrains[hexId];
                 const terrain = TERRAIN_TYPES[terrainKey.toUpperCase()];
-                let number = null;
-                let pips = 0;
-
-                if (terrainKey !== 'desert') {
-                    number = numbers[numIdx++];
-                    pips = NUMBER_PIPS[number] || 0;
-                } else {
-                    this.robberHexId = hexId;
-                }
+                if (terrainKey === 'desert') this.robberHexId = hexId;
 
                 const hex = {
                     id: hexId,
@@ -61,8 +49,8 @@ class BoardGraph {
                     terrainKey,
                     terrain,
                     resource: terrain.resource,
-                    number,
-                    pips,
+                    number: null,
+                    pips: 0,
                     vertexIds: [],
                     edgeIds: []
                 };
@@ -73,8 +61,24 @@ class BoardGraph {
             }
         }
 
-        // Setup coastal Harbors
+        this.placeNumbers();
         this.setupHarbors();
+    }
+
+    // Number tokens, reshuffled until no 6 or 8 sits next to another 6 or 8
+    placeNumbers() {
+        const land = this.hexes.filter(h => h.terrainKey !== 'desert');
+        const isRed = n => n === 6 || n === 8;
+        const touching = (a, b) => a.vertexIds.some(v => b.vertexIds.includes(v));
+
+        for (let attempt = 0; attempt < 1000; attempt++) {
+            const numbers = shuffled(STANDARD_NUMBERS);
+            land.forEach((h, i) => { h.number = numbers[i]; });
+            const red = land.filter(h => isRed(h.number));
+            const clash = red.some((a, i) => red.slice(i + 1).some(b => touching(a, b)));
+            if (!clash) break;
+        }
+        land.forEach(h => { h.pips = NUMBER_PIPS[h.number] || 0; });
     }
 
     getVertexKey(x, y) {
@@ -188,18 +192,26 @@ class BoardGraph {
             { type: '3:1', ratio: 3, resource: null, label: '3:1' },
             { type: '3:1', ratio: 3, resource: null, label: '3:1' },
             { type: '3:1', ratio: 3, resource: null, label: '3:1' }
-        ].sort(() => Math.random() - 0.5);
+        ];
+        const types = shuffled(harborTypes);
 
-        // Find boundary edges (edges with exactly 1 hex)
-        const coastalEdges = this.edges.filter(e => e.hexIds.length === 1);
+        // Coastal edges (only 1 hex), in order around the island
+        const angle = e => {
+            const a = this.vertices[e.v1], b = this.vertices[e.v2];
+            return Math.atan2((a.y + b.y) / 2, (a.x + b.x) / 2);
+        };
+        const coast = this.edges.filter(e => e.hexIds.length === 1).sort((a, b) => angle(a) - angle(b));
 
-        // Group coastal edges and pick ~9 spaced harbor pairs
-        const step = Math.floor(coastalEdges.length / harborTypes.length);
+        // Spread 9 harbors with gaps of 3–4 edges like the printed board, so no
+        // two harbors share or touch a corner. Random starting point.
+        const gaps = shuffled([3, 3, 3, 3, 3, 3, 4, 4, 4]);
+        let pos = Math.floor(Math.random() * coast.length);
         this.harbors = [];
 
-        for (let i = 0; i < harborTypes.length; i++) {
-            const edge = coastalEdges[(i * step) % coastalEdges.length];
-            const hInfo = harborTypes[i];
+        for (let i = 0; i < types.length; i++) {
+            const edge = coast[pos % coast.length];
+            pos += gaps[i];
+            const hInfo = types[i];
             const harborObj = {
                 id: i,
                 edgeId: edge.id,

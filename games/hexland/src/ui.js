@@ -278,9 +278,9 @@ class HexlandUI {
         if (phase === 'GAME_OVER') return 'Game over!';
 
         if (phase === 'ROBBER_DISCARD') {
-            const pending = this.game.pendingDiscards[0];
-            if (pending && pending.playerId === this.mySeat) return 'You have too many cards: choose which ones to discard.';
-            const who = pending ? this.game.players[pending.playerId].name : 'Players';
+            const pending = this.game.pendingDiscards;
+            if (pending.some(d => d.playerId === this.mySeat)) return 'You have too many cards: choose which ones to discard.';
+            const who = pending.map(d => this.game.players[d.playerId].name).join(', ') || 'Players';
             return `Waiting for ${who} to discard cards...`;
         }
 
@@ -530,7 +530,7 @@ class HexlandUI {
         } else {
             me.devCards.forEach(type => {
                 const info = DEV_CARD_INFO[type];
-                const canPlay = !this.game.activeDevCardPlayedThisTurn && !this.game.boughtDevCardThisTurn.includes(type);
+                const canPlay = !this.game.activeDevCardPlayedThisTurn && this.game.playableDevCardCount(me.id, type) > 0;
 
                 cardsHtml += `
                     <div class="dev-card-item">
@@ -659,9 +659,9 @@ class HexlandUI {
     }
 
     checkDiscardModal() {
-        const pending = this.game.pendingDiscards[0];
         const me = this.me;
-        if (!pending || !me || pending.playerId !== me.id) {
+        const pending = me && this.game.pendingDiscards.find(d => d.playerId === me.id);
+        if (!pending) {
             this.discardModal.classList.remove('active');
             return;
         }

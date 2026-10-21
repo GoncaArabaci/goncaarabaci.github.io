@@ -92,6 +92,16 @@ const PLAYER_COLORS = [
     { id: 3, name: 'Green', hex: '#2ecc71', light: '#55efc4', dark: '#27ae60', text: '#ffffff' }
 ];
 
+// Fair shuffle (Fisher–Yates). Returns a new array.
+function shuffled(list) {
+    const a = [...list];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
 const NUMBER_PIPS = {
     2: 1, 3: 2, 4: 3, 5: 4, 6: 5,
     8: 5, 9: 4, 10: 3, 11: 2, 12: 1

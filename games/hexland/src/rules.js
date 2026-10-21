@@ -77,7 +77,7 @@ class HexlandGame {
         for (let i = 0; i < 2; i++) deck.push(DEV_CARD_TYPES.YEAR_OF_PLENTY);
         for (let i = 0; i < 2; i++) deck.push(DEV_CARD_TYPES.MONOPOLY);
 
-        this.devCardDeck = deck.sort(() => Math.random() - 0.5);
+        this.devCardDeck = shuffled(deck);
     }
 
     log(msg) {
@@ -208,50 +208,40 @@ class HexlandGame {
             }
         });
 
-        if (this.pendingDiscards.length > 0) {
-            this.phase = 'ROBBER_DISCARD';
-            this.processNextDiscard();
-        } else {
-            this.phase = 'ROBBER_MOVE';
-            this.log(`🦹 ${this.getCurrentPlayer().name} must move the robber to a new tile.`);
-        }
+        this.phase = 'ROBBER_DISCARD';
+        this.finishDiscardsIfDone();
     }
 
-    processNextDiscard() {
-        if (this.pendingDiscards.length === 0) {
-            this.phase = 'ROBBER_MOVE';
-            this.log(`🦹 ${this.getCurrentPlayer().name} must move the robber to a new tile.`);
-            return;
-        }
-
-        const currentDiscard = this.pendingDiscards[0];
-        const player = this.players[currentDiscard.playerId];
-
-        // If player is AI, automatically discard random cards
-        if (player.isAI) {
-            this.autoDiscardForAI(player, currentDiscard.count);
-            this.pendingDiscards.shift();
-            this.processNextDiscard();
-        }
+    // Everyone who has to discard does it at the same time; the robber moves
+    // once the last of them is done
+    finishDiscardsIfDone() {
+        if (this.phase !== 'ROBBER_DISCARD' || this.pendingDiscards.length > 0) return;
+        this.phase = 'ROBBER_MOVE';
+        this.log(`🦹 ${this.getCurrentPlayer().name} must move the robber to a new tile.`);
     }
 
-    autoDiscardForAI(player, count) {
-        let remaining = count;
-        const resKeys = Object.keys(player.resources);
-        while (remaining > 0) {
-            const available = resKeys.filter(k => player.resources[k] > 0);
-            if (available.length === 0) break;
-            const chosen = available[Math.floor(Math.random() * available.length)];
-            player.resources[chosen]--;
-            remaining--;
-        }
-        this.log(`🤖 ${player.name} discarded ${count} cards.`);
+    // Random discard for a player who can't choose (disconnected)
+    autoDiscard(playerId) {
+        const idx = this.pendingDiscards.findIndex(d => d.playerId === playerId);
+        if (idx === -1) return false;
+        const player = this.players[playerId];
+        const pool = [];
+        Object.entries(player.resources).forEach(([res, n]) => { for (let i = 0; i < n; i++) pool.push(res); });
+        shuffled(pool).slice(0, this.pendingDiscards[idx].count).forEach(res => {
+            player.resources[res]--;
+            this.bank[res]++;
+        });
+        this.log(`🗑️ ${player.name} is away, so ${this.pendingDiscards[idx].count} random cards were discarded for them.`);
+        this.pendingDiscards.splice(idx, 1);
+        this.finishDiscardsIfDone();
+        return true;
     }
 
     discardResources(playerId, discardedRes) {
         if (this.phase !== 'ROBBER_DISCARD') return false;
-        const discardObj = this.pendingDiscards[0];
-        if (!discardObj || discardObj.playerId !== playerId) return false;
+        const discardIdx = this.pendingDiscards.findIndex(d => d.playerId === playerId);
+        const discardObj = this.pendingDiscards[discardIdx];
+        if (!discardObj) return false;
 
         const totalDiscarded = Object.values(discardedRes).reduce((a, b) => a + b, 0);
         if (totalDiscarded !== discardObj.count) return false;
@@ -267,8 +257,8 @@ class HexlandGame {
         }
 
         this.log(`🗑️ ${player.name} discarded ${totalDiscarded} cards.`);
-        this.pendingDiscards.shift();
-        this.processNextDiscard();
+        this.pendingDiscards.splice(discardIdx, 1);
+        this.finishDiscardsIfDone();
         return true;
     }
 
@@ -405,6 +395,8 @@ class HexlandGame {
         }
 
         this.lastSetupVertexId = vertexId;
+        // A new settlement can cut an opponent's road
+        this.updateLongestRoad();
         this.updateVictoryPoints();
 
         // Advance setup step
@@ -447,16 +439,25 @@ class HexlandGame {
         return card;
     }
 
+    // How many cards of this type the player may play now: cards bought this
+    // turn have to wait, older ones of the same type don't
+    playableDevCardCount(playerId, cardType) {
+        const cards = this.players[playerId].devCards || [];
+        const owned = cards.filter(c => c === cardType).length;
+        const fresh = playerId === this.turnIndex
+            ? this.boughtDevCardThisTurn.filter(c => c === cardType).length
+            : 0;
+        return Math.max(0, owned - fresh);
+    }
+
     playDevCard(cardType, params = {}) {
         if (this.activeDevCardPlayedThisTurn) return false;
+        // Victory Point cards stay hidden in the hand and count automatically
+        if (cardType === DEV_CARD_TYPES.VICTORY_POINT) return false;
         const player = this.getCurrentPlayer();
         const cardIndex = player.devCards.indexOf(cardType);
         if (cardIndex === -1) return false;
-
-        // Cannot play a card on the turn it was bought (except VP cards)
-        if (this.boughtDevCardThisTurn.includes(cardType) && cardType !== DEV_CARD_TYPES.VICTORY_POINT) {
-            return false;
-        }
+        if (this.playableDevCardCount(player.id, cardType) === 0) return false;
 
         player.devCards.splice(cardIndex, 1);
         this.activeDevCardPlayedThisTurn = true;
@@ -558,66 +559,58 @@ class HexlandGame {
         return true;
     }
 
-    // Longest Road DFS
+    // Longest single road: no road piece used twice, and it may end at an
+    // opponent's building but not pass through it
     calculateLongestRoad(playerId) {
-        const playerEdges = this.board.edges.filter(e => e.road && e.road.owner === playerId);
-        if (playerEdges.length === 0) return 0;
+        const owns = e => e.road && e.road.owner === playerId;
+        const blocked = vId => {
+            const b = this.board.vertices[vId].building;
+            return b && b.owner !== playerId;
+        };
 
         let maxLen = 0;
-        const visitedEdgeIds = new Set();
-
-        const dfs = (vertexId, currentLen) => {
-            if (currentLen > maxLen) maxLen = currentLen;
-
-            const v = this.board.vertices[vertexId];
-            for (const edgeId of v.edgeIds) {
-                if (!visitedEdgeIds.has(edgeId)) {
-                    const edge = this.board.edges[edgeId];
-                    if (edge.road && edge.road.owner === playerId) {
-                        const nextVId = (edge.v1 === vertexId) ? edge.v2 : edge.v1;
-                        const nextV = this.board.vertices[nextVId];
-
-                        // If next vertex has an enemy building, road cannot continue through it
-                        if (nextV.building && nextV.building.owner !== playerId) {
-                            if (currentLen + 1 > maxLen) maxLen = currentLen + 1;
-                            continue;
-                        }
-
-                        visitedEdgeIds.add(edgeId);
-                        dfs(nextVId, currentLen + 1);
-                        visitedEdgeIds.delete(edgeId);
-                    }
-                }
+        const used = new Set();
+        const dfs = (vId, len) => {
+            if (len > maxLen) maxLen = len;
+            if (len > 0 && blocked(vId)) return;
+            for (const eId of this.board.vertices[vId].edgeIds) {
+                const e = this.board.edges[eId];
+                if (used.has(eId) || !owns(e)) continue;
+                used.add(eId);
+                dfs(e.v1 === vId ? e.v2 : e.v1, len + 1);
+                used.delete(eId);
             }
         };
 
-        // Start DFS from each vertex of each player edge
-        playerEdges.forEach(e => {
-            visitedEdgeIds.add(e.id);
-            dfs(e.v1, 1);
-            dfs(e.v2, 1);
-            visitedEdgeIds.delete(e.id);
-        });
-
+        const starts = new Set();
+        this.board.edges.forEach(e => { if (owns(e)) { starts.add(e.v1); starts.add(e.v2); } });
+        starts.forEach(v => dfs(v, 0));
         return maxLen;
     }
 
+    // Official rules: needs 5+ roads. The holder keeps it on a tie. If the holder
+    // loses it (road cut) and several players tie for longest, nobody holds it.
     updateLongestRoad() {
-        let longestSoFar = this.longestRoadLength;
-        let newOwner = this.longestRoadOwner;
+        const lengths = this.players.map(p => this.calculateLongestRoad(p.id));
+        const best = Math.max(0, ...lengths);
+        const holder = this.longestRoadOwner;
 
-        this.players.forEach(p => {
-            const length = this.calculateLongestRoad(p.id);
-            if (length > longestSoFar) {
-                longestSoFar = length;
-                newOwner = p.id;
-            }
-        });
+        let newOwner = null;
+        if (holder !== null && lengths[holder] >= 5 && lengths[holder] === best) {
+            newOwner = holder;
+        } else {
+            const leaders = this.players.filter(p => lengths[p.id] === best);
+            if (best >= 5 && leaders.length === 1) newOwner = leaders[0].id;
+        }
 
-        if (newOwner !== this.longestRoadOwner) {
-            this.longestRoadOwner = newOwner;
-            this.longestRoadLength = longestSoFar;
-            this.log(`🚩 ${this.players[newOwner].name} took the Longest Road! (${longestSoFar} roads)`);
+        this.longestRoadLength = newOwner !== null ? lengths[newOwner] : 4;
+        if (newOwner === holder) return;
+
+        this.longestRoadOwner = newOwner;
+        if (newOwner !== null) {
+            this.log(`🚩 ${this.players[newOwner].name} took the Longest Road! (${lengths[newOwner]} roads)`);
+        } else {
+            this.log(`🚩 ${this.players[holder].name} lost the Longest Road. Nobody holds it now.`);
         }
     }
 
@@ -659,7 +652,9 @@ class HexlandGame {
             const vpCards = p.devCards.filter(c => c === DEV_CARD_TYPES.VICTORY_POINT).length;
             p.victoryPoints = pts + vpCards;
 
-            if (p.victoryPoints >= 10 && this.phase === 'ACTION' && this.turnIndex === p.id) {
+            // You win the moment you have 10 VP during your own turn
+            const inPlay = !this.phase.startsWith('SETUP') && this.phase !== 'GAME_OVER';
+            if (p.victoryPoints >= 10 && inPlay && this.turnIndex === p.id) {
                 this.winner = p;
                 this.phase = 'GAME_OVER';
                 this.log(`🏆🎉 CONGRATULATIONS! ${p.name} reached 10 Victory Points and WON the game! 🎉🏆`);
@@ -805,6 +800,8 @@ class HexlandGame {
         this.phase = 'ACTION';
 
         this.log(`👉 It's now ${this.getCurrentPlayer().name}'s turn.`);
+        // Points gained on someone else's turn count as soon as your turn starts
+        this.updateVictoryPoints();
         return true;
     }
 }

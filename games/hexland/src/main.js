@@ -197,6 +197,7 @@ class HexlandApp {
             const p = this.game.players[seat];
             p.online = false;
             this.game.log(`📴 ${p.name} disconnected. They can rejoin with the same link.`);
+            this.discardForAwayPlayers();
             this.broadcastState([]);
         }
     }
@@ -286,8 +287,7 @@ class HexlandApp {
                 break;
             }
             case 'discard': {
-                const pending = g.pendingDiscards[0];
-                if (!pending || pending.playerId !== seat) break;
+                if (!g.pendingDiscards.some(d => d.playerId === seat)) break;
                 const cards = {};
                 for (const [res, n] of Object.entries(data.resources || {})) {
                     if (!isResource(res)) continue;
@@ -333,8 +333,19 @@ class HexlandApp {
             }
         }
 
+        this.discardForAwayPlayers();
         // Always resend, so a rejected move snaps back to the real state
         this.broadcastState(ok ? events : []);
+    }
+
+    // A disconnected player can't pick cards to discard after a 7, so the
+    // game would wait forever: discard randomly for them instead
+    discardForAwayPlayers() {
+        const g = this.game;
+        if (!g || g.phase !== 'ROBBER_DISCARD') return;
+        [...g.pendingDiscards].forEach(d => {
+            if (g.players[d.playerId].online === false) g.autoDiscard(d.playerId);
+        });
     }
 
     broadcastState(events) {
