@@ -59,6 +59,12 @@
                         <div class="die" id="die-2">?</div>
                     </div>
                     <button id="btn-roll" class="pixel-btn primary-btn pulse-glow">🎲 ROLL DICE</button>
+                    <!-- Building happens from the hand bar; these are the other turn moves -->
+                    <div class="turn-actions">
+                        <button id="btn-dev" class="pixel-btn turn-btn dev-btn" title="Buy or play development cards (buy: 1 Wool, 1 Grain, 1 Ore)">🎴 Dev Cards</button>
+                        <button id="btn-trade" class="pixel-btn turn-btn trade-btn">🤝 Trade</button>
+                        <button id="btn-end-turn" class="pixel-btn turn-btn end-turn-btn">⏭️ End Turn</button>
+                    </div>
                 </section>
 
                 <!-- Bank supply -->
@@ -69,33 +75,6 @@
                     </div>
                     <div id="bank-resources" class="resources-grid">
                         <!-- Populated by JS -->
-                    </div>
-                </section>
-
-                <!-- Building & Action Buttons -->
-                <section class="panel-section actions-section">
-                    <div class="section-title">🔨 Actions</div>
-                    <div class="actions-grid">
-                        <button id="btn-road" class="pixel-btn action-btn" title="Cost: 1 Wood, 1 Brick">
-                            🚧 Road
-                            <small class="cost-hint">🌲+🧱</small>
-                        </button>
-                        <button id="btn-settlement" class="pixel-btn action-btn" title="Cost: 1 Wood, 1 Brick, 1 Wool, 1 Grain">
-                            🏠 Settlement
-                            <small class="cost-hint">🌲+🧱+🐑+🌾</small>
-                        </button>
-                        <button id="btn-city" class="pixel-btn action-btn" title="Cost: 2 Grain, 3 Ore">
-                            🏰 City
-                            <small class="cost-hint">🌾🌾+⛏️⛏️⛏️</small>
-                        </button>
-                        <button id="btn-dev" class="pixel-btn action-btn" title="Cost: 1 Wool, 1 Grain, 1 Ore">
-                            🎴 Dev Card
-                            <small class="cost-hint">🐑+🌾+⛏️</small>
-                        </button>
-                    </div>
-                    <div class="secondary-actions">
-                        <button id="btn-trade" class="pixel-btn trade-btn">🤝 Trade / Harbor</button>
-                        <button id="btn-end-turn" class="pixel-btn end-turn-btn">⏭️ End Turn</button>
                     </div>
                 </section>
 

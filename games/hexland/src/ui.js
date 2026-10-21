@@ -29,9 +29,6 @@ class HexlandUI {
         this.die2El = document.getElementById('die-2');
 
         this.rollBtn = document.getElementById('btn-roll');
-        this.roadBtn = document.getElementById('btn-road');
-        this.settlementBtn = document.getElementById('btn-settlement');
-        this.cityBtn = document.getElementById('btn-city');
         this.devCardBtn = document.getElementById('btn-dev');
         this.tradeBtn = document.getElementById('btn-trade');
         this.endTurnBtn = document.getElementById('btn-end-turn');
@@ -87,9 +84,6 @@ class HexlandUI {
 
     bindEvents() {
         this.rollBtn.addEventListener('click', () => this.onAction('roll'));
-        this.roadBtn.addEventListener('click', () => this.toggleBuildMode('build_road'));
-        this.settlementBtn.addEventListener('click', () => this.toggleBuildMode('build_settlement'));
-        this.cityBtn.addEventListener('click', () => this.toggleBuildMode('build_city'));
         this.tradeBtn.addEventListener('click', () => this.openTradeModal());
         this.devCardBtn.addEventListener('click', () => this.openDevModal());
         this.endTurnBtn.addEventListener('click', () => {
@@ -137,12 +131,31 @@ class HexlandUI {
         this.bindCopyButton(this.btnCopyRoom, this.roomLinkInput);
     }
 
+    // The clipboard API can be refused (no permission, page not focused,
+    // older browser), so fall back to the classic copy command, and as a
+    // last resort leave the link selected for Ctrl+C
     bindCopyButton(btn, input) {
+        const flash = (text) => {
+            btn.textContent = text;
+            clearTimeout(btn._copyTimer);
+            btn._copyTimer = setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+        };
+        const legacyCopy = () => {
+            input.focus();
+            input.select();
+            input.setSelectionRange(0, input.value.length);
+            let ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            flash(ok ? '✓ Copied!' : 'Press Ctrl+C');
+        };
+
         btn.addEventListener('click', () => {
-            navigator.clipboard.writeText(input.value).then(() => {
-                btn.textContent = '✓ Copied!';
-                setTimeout(() => btn.textContent = 'Copy', 2000);
-            });
+            if (!input.value) return;
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(input.value).then(() => flash('✓ Copied!'), legacyCopy);
+            } else {
+                legacyCopy();
+            }
         });
     }
 
@@ -346,27 +359,22 @@ class HexlandUI {
 
         this.rollBtn.disabled = !myTurn || !inAction || rolled;
 
-        const can = cost => me && this.game.hasResources(me.id, cost);
-        this.roadBtn.disabled = !canAct || !can(COSTS.road) || me.roadsLeft <= 0;
-        this.settlementBtn.disabled = !canAct || !can(COSTS.settlement) || me.settlementsLeft <= 0;
-        this.cityBtn.disabled = !canAct || !can(COSTS.city) || me.citiesLeft <= 0;
         this.tradeBtn.disabled = !canAct;
         this.devCardBtn.disabled = !myTurn || !inAction;
         this.endTurnBtn.disabled = !canAct;
 
-        this.roadBtn.classList.toggle('active-mode', this.renderer.activeMode === 'build_road');
-        this.settlementBtn.classList.toggle('active-mode', this.renderer.activeMode === 'build_settlement');
-        this.cityBtn.classList.toggle('active-mode', this.renderer.activeMode === 'build_city');
+        // A tapped piece in the hand stays highlighted while it waits for a spot
+        this.handPieces.querySelectorAll('[data-piece]').forEach(el => {
+            el.classList.toggle('active-mode', this.renderer.activeMode === `build_${el.dataset.piece}`);
+        });
     }
 
-    // Bank supply in the sidebar
+    // Bank supply in the sidebar, shown with the same card art as the hand
     renderBank() {
         const bank = this.game.bank || {};
         this.bankContainer.innerHTML = Object.entries(RESOURCE_NAMES).map(([key, name]) => `
-            <div class="res-chip ${bank[key] === 0 ? 'res-empty' : ''}">
-                <span class="res-icon">${RESOURCE_ICONS[key]}</span>
-                <span class="res-name">${name}</span>
-                <span class="res-count">${bank[key] ?? 0}</span>
+            <div class="bank-card res-art res-${key} ${bank[key] === 0 ? 'res-empty' : ''}" title="${name}: ${bank[key] ?? 0} left in the bank">
+                <span class="hand-card-count">${bank[key] ?? 0}</span>
             </div>
         `).join('');
         this.bankDevCount.textContent = this.game.devCardDeck.length;
@@ -391,7 +399,7 @@ class HexlandUI {
         this.handResources.innerHTML = Object.entries(RESOURCE_NAMES).map(([key, name]) => {
             const count = me.resources[key] || 0;
             return `
-                <div class="hand-card art-card res-${key} ${count === 0 ? 'is-empty' : ''}" title="${name}">
+                <div class="hand-card art-card res-art res-${key} ${count === 0 ? 'is-empty' : ''}" title="${name}">
                     <span class="hand-card-icon">${RESOURCE_ICONS[key]}</span>
                     <span class="hand-card-name">${name}</span>
                     <span class="hand-card-count">${count}</span>
@@ -421,7 +429,8 @@ class HexlandUI {
         pieces.forEach(p => {
             const ready = app && app.canPlace(p.kind);
             const el = document.createElement('div');
-            el.className = `hand-card piece-card ${ready ? 'is-ready' : 'is-empty'}`;
+            const active = this.renderer.activeMode === `build_${p.kind}`;
+            el.className = `hand-card piece-card ${ready ? 'is-ready' : 'is-empty'} ${active ? 'active-mode' : ''}`;
             el.dataset.piece = p.kind;
             el.title = ready ? `Drag onto the board to place a ${p.name.toLowerCase()}` : p.name;
 

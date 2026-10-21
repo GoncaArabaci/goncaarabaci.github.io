@@ -200,44 +200,6 @@ body {
     font-weight: bold;
 }
 
-/* Actions Grid */
-.actions-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-}
-
-.action-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 4px;
-    font-size: 8px;
-    gap: 4px;
-}
-
-.cost-hint {
-    font-size: 6px;
-    color: #cbd5e1;
-}
-
-.secondary-actions {
-    display: flex;
-    gap: 6px;
-    margin-top: 4px;
-}
-
-.trade-btn {
-    flex: 1;
-    background: #2563eb !important;
-}
-
-.end-turn-btn {
-    flex: 1;
-    background: #d97706 !important;
-}
-
 /* Scoreboard */
 .players-scoreboard {
     display: flex;
@@ -746,7 +708,9 @@ body {
     gap: 18px;
     align-items: flex-end;
     overflow-x: auto;
-    padding-bottom: 2px;
+    /* room above and right for the count badges and the hover lift; a
+       scrolling row clips anything that sticks out of it */
+    padding: 16px 12px 4px 2px;
 }
 
 .hand-group {
@@ -906,11 +870,11 @@ body.is-dragging * { cursor: grabbing !important; }
 .hand-card.art-card .hand-card-icon,
 .hand-card.art-card .hand-card-name { display: none; }
 
-.hand-card.art-card.res-wood  { background-image: url(assets/images/card_forest.png); }
-.hand-card.art-card.res-brick { background-image: url(assets/images/card_hills.png); }
-.hand-card.art-card.res-sheep { background-image: url(assets/images/card_pasture.png); }
-.hand-card.art-card.res-wheat { background-image: url(assets/images/card_fields.png); }
-.hand-card.art-card.res-ore   { background-image: url(assets/images/card_stone.png); }
+.res-art.res-wood { background-image: url(assets/images/card_forest.png); }
+.res-art.res-brick { background-image: url(assets/images/card_hills.png); }
+.res-art.res-sheep { background-image: url(assets/images/card_pasture.png); }
+.res-art.res-wheat { background-image: url(assets/images/card_fields.png); }
+.res-art.res-ore { background-image: url(assets/images/card_stone.png); }
 
 /* Development cards show the drawn card back, with the name underneath */
 .dev-hand-card {
@@ -932,4 +896,57 @@ body.is-dragging * { cursor: grabbing !important; }
     color: #fff;
     padding: 3px 4px;
     max-width: 52px;
+}
+
+/* Bank: the same card art as the hand, smaller */
+.resources-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 10px;
+    padding: 10px 8px 2px 0;
+}
+
+.bank-card {
+    position: relative;
+    width: 42px;
+    height: 64px;
+    background: center / auto 100% no-repeat;
+    image-rendering: pixelated;
+    filter: drop-shadow(2px 2px 0 #000);
+}
+
+.bank-card .hand-card-count {
+    top: -8px;
+    right: -10px;
+    min-width: 20px;
+    height: 20px;
+    font-size: 8px;
+}
+
+.bank-card.res-empty { opacity: 0.35; }
+
+/* Turn buttons under the dice (building is done from the hand bar) */
+.turn-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    width: 100%;
+}
+
+.turn-btn {
+    font-size: 7px;
+    padding: 9px 4px;
+    line-height: 1.4;
+}
+
+.trade-btn { background: #2563eb !important; }
+.end-turn-btn { background: #d97706 !important; }
+.dev-btn { background: #7c3aed !important; }
+
+.turn-btn:disabled { background: #334155 !important; }
+
+/* A tapped piece waiting for a spot on the board */
+.piece-card.active-mode {
+    transform: translateY(-6px);
+    box-shadow: 3px 3px 0 #000, 0 0 0 3px #2ecc71;
 }

@@ -594,7 +594,7 @@ class HexlandApp {
             const kind = el.dataset.piece;
             if (!this.canPlace(kind)) return;
             e.preventDefault();
-            this.drag = { kind };
+            this.drag = { kind, prevMode: this.renderer.activeMode };
             this.renderer.activeMode = null;
             document.body.classList.add('is-dragging');
             this.updatePreview(e);
@@ -606,13 +606,25 @@ class HexlandApp {
 
         document.addEventListener('pointerup', (e) => {
             if (!this.drag) return;
-            const kind = this.drag.kind;
+            const { kind, prevMode } = this.drag;
             const p = this.pointerOnCanvas(e);
             const target = p.inside ? this.findTarget(kind, p.world) : null;
             this.drag = null;
             document.body.classList.remove('is-dragging');
-            if (target !== null && this.canPlace(kind)) this.placePiece(kind, target);
-            else this.renderer.preview = null;
+            if (target !== null && this.canPlace(kind)) {
+                this.placePiece(kind, target);
+                return;
+            }
+            this.renderer.preview = null;
+
+            // Released on the same piece without dragging: treat it as a tap,
+            // which picks the piece so the next click on the board places it
+            const tapped = e.target.closest && e.target.closest('[data-piece]');
+            if (!p.inside && tapped && tapped.dataset.piece === kind) {
+                const mode = `build_${kind}`;
+                this.renderer.activeMode = prevMode === mode ? null : mode;
+                this.ui.updateButtons();
+            }
         });
     }
 
