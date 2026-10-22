@@ -150,7 +150,7 @@ class HexlandApp {
         if (msg.t === 'join') {
             const name = String(msg.name || '').trim().slice(0, 16) || 'Friend';
             const token = String(msg.token || '');
-            let seat = this.lobbyPlayers.findIndex(p => p.token === token);
+            let seat = token ? this.lobbyPlayers.findIndex((p, i) => i > 0 && p.token === token) : -1; // seat 0 is the host
 
             if (seat === -1) {
                 if (this.started) {
@@ -180,13 +180,13 @@ class HexlandApp {
         }
 
         if (msg.t === 'action' && this.started) {
-            const seat = this.lobbyPlayers.findIndex(p => p.connId === connId);
+            const seat = connId ? this.lobbyPlayers.findIndex((p, i) => i > 0 && p.connId === connId) : -1;
             if (seat !== -1) this.applyAction(seat, msg.action, msg.data || {});
         }
     }
 
     onGuestLeft(connId) {
-        const seat = this.lobbyPlayers.findIndex(p => p.connId === connId);
+        const seat = connId ? this.lobbyPlayers.findIndex((p, i) => i > 0 && p.connId === connId) : -1;
         if (seat === -1) return;
 
         if (!this.started) {

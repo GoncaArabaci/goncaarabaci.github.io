@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Rail Rivals 🚂 Online Train Route Game</title>
+    <link rel="stylesheet" href="../../assets/fonts/fonts.css">
+    <!-- PeerJS 1.5.4 (WebRTC rooms), served from this site instead of a CDN.
+         Checked against the npm package: sha256 ad5d8870d1e389914f9cba8d35be313c4327c69ee0a221e482e9bf7621136fe5 -->
+    <script src="vendor/peerjs.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <header id="topbar">
+            <div class="brand">
+                <span class="brand-icon" aria-hidden="true">🚂</span>
+                <span class="brand-name">Rail<b>Rivals</b></span>
+            </div>
+            <div id="turn-pill" class="turn-pill">
+                <span id="turn-dot" class="turn-dot"></span>
+                <span id="turn-text">Create or join a room</span>
+            </div>
+            <div class="top-actions">
+                <button id="btn-invite" class="chip-btn" type="button">🔗 Invite</button>
+                <button id="btn-sound" class="chip-btn icon-only" type="button" aria-label="Sound">🔊</button>
+                <button id="btn-rules" class="chip-btn" type="button">📖 Rules</button>
+            </div>
+        </header>
+
+        <div id="final-banner" class="final-banner" hidden>⏰ Final round! Everyone gets one last turn.</div>
+
+        <main id="table">
+            <section id="board-wrap">
+                <svg id="board" role="img" aria-label="Rail Rivals map"></svg>
+                <div id="route-tip" class="route-tip" hidden></div>
+            </section>
+
+            <aside id="side">
+                <section class="panel">
+                    <h2 class="panel-title">Players</h2>
+                    <div id="players"></div>
+                </section>
+
+                <section class="panel market-panel">
+                    <h2 class="panel-title">Station <span id="draw-hint" class="hint"></span></h2>
+                    <div id="market" class="market"></div>
+                    <div class="piles">
+                        <button id="deck" class="pile deck-pile" type="button">
+                            <span class="pile-art">🂠</span>
+                            <span class="pile-label">Deck</span>
+                            <span id="deck-count" class="pile-count">0</span>
+                        </button>
+                        <button id="ticket-pile" class="pile ticket-pile" type="button">
+                            <span class="pile-art">🎫</span>
+                            <span class="pile-label">Tickets</span>
+                            <span id="ticket-count" class="pile-count">0</span>
+                        </button>
+                    </div>
+                    <button id="btn-pass" class="ghost-btn" type="button" hidden>Nothing to do — pass</button>
+                </section>
+
+                <section class="panel log-panel">
+                    <h2 class="panel-title">Log</h2>
+                    <div id="log" class="log"></div>
+                </section>
+            </aside>
+
+            <section id="tray">
+                <div class="tray-head">
+                    <span id="tray-title">Your hand</span>
+                    <span class="tray-meta"><span id="my-trains">45</span> 🚃 left</span>
+                </div>
+                <div class="tray-body">
+                    <div id="hand" class="hand"></div>
+                    <div id="my-tickets" class="my-tickets"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Lobby -->
+    <div id="lobby" class="overlay show">
+        <div class="sheet lobby-sheet">
+            <div class="lobby-hero">
+                <div class="hero-train" aria-hidden="true">🚂<span>🚃</span><span>🚃</span><span>🚃</span></div>
+                <h1>Rail<b>Rivals</b></h1>
+                <p id="lobby-sub">Build rail lines across the island, finish your secret tickets and outrun your friends.</p>
+            </div>
+
+            <div id="lobby-name-step" class="lobby-step">
+                <label for="lobby-name">Your name</label>
+                <input id="lobby-name" class="field" maxlength="16" placeholder="e.g. Gonca" autocomplete="off">
+                <button id="btn-lobby-go" class="big-btn" type="button">Create room</button>
+            </div>
+
+            <div id="lobby-room-step" class="lobby-step" hidden>
+                <label for="lobby-link">Room link</label>
+                <div class="link-row">
+                    <input id="lobby-link" class="field" readonly>
+                    <button id="btn-lobby-copy" class="copy-btn" type="button">Copy</button>
+                </div>
+                <div class="lobby-list-head">Players <span id="lobby-count">1</span>/5</div>
+                <div id="lobby-players" class="lobby-players"></div>
+                <button id="btn-start" class="big-btn" type="button" hidden>Start game</button>
+                <p id="lobby-wait" class="muted"></p>
+            </div>
+
+            <p id="lobby-error" class="error-text" role="alert"></p>
+        </div>
+    </div>
+
+    <!-- Invite -->
+    <div id="invite" class="overlay">
+        <div class="sheet small-sheet">
+            <h3>Invite friends</h3>
+            <p class="muted">Send this link. Friends open it on their own phone or computer.</p>
+            <div class="link-row">
+                <input id="invite-link" class="field" readonly>
+                <button id="btn-invite-copy" class="copy-btn" type="button">Copy</button>
+            </div>
+            <button class="ghost-btn close-btn" type="button" data-close="invite">Close</button>
+        </div>
+    </div>
+
+    <!-- Ticket choice -->
+    <div id="ticket-choice" class="overlay">
+        <div class="sheet ticket-sheet">
+            <h3 id="ticket-choice-title">Choose your tickets</h3>
+            <p id="ticket-choice-sub" class="muted"></p>
+            <div id="ticket-options" class="ticket-options"></div>
+            <button id="btn-keep-tickets" class="big-btn" type="button">Keep</button>
+        </div>
+    </div>
+
+    <!-- Claim a route -->
+    <div id="claim" class="popover" hidden>
+        <div class="claim-head">
+            <div id="claim-title" class="claim-title"></div>
+            <button id="claim-close" class="x-btn" type="button" aria-label="Close">✕</button>
+        </div>
+        <div id="claim-meta" class="claim-meta"></div>
+        <div id="claim-options" class="claim-options"></div>
+    </div>
+
+    <!-- Rules -->
+    <div id="rules" class="overlay">
+        <div class="sheet rules-sheet">
+            <h3>How to play</h3>
+            <ul class="rules-list">
+                <li><b>Goal:</b> score the most points by claiming routes, finishing your tickets and building the longest line.</li>
+                <li><b>On your turn do one thing:</b>
+                    <ul>
+                        <li><b>Take 2 cards</b> from the station row or the deck. A face-up wild 🌈 counts as both cards, and can't be your second pick.</li>
+                        <li><b>Claim a route:</b> tap it and pay as many cards of its color as it has cars. Grey routes take any one color. Wild cards replace any color.</li>
+                        <li><b>Draw tickets:</b> look at 3 and keep at least 1.</li>
+                    </ul>
+                </li>
+                <li><b>Route points:</b> 1 car = 1, 2 = 2, 3 = 4, 4 = 7, 5 = 10, 6 = 15.</li>
+                <li><b>Tickets:</b> connect the two cities with your own trains to add the points at the end. Unfinished tickets subtract them.</li>
+                <li><b>Double routes:</b> with 2–3 players only one of the two tracks can be used. Nobody can own both.</li>
+                <li><b>Longest line:</b> +10 for the longest continuous line.</li>
+                <li><b>The end:</b> when someone has 2 or fewer trains left, everyone gets one last turn.</li>
+            </ul>
+            <button class="big-btn close-btn" type="button" data-close="rules">Let's go</button>
+        </div>
+    </div>
+
+    <!-- Game over -->
+    <div id="results" class="overlay">
+        <div class="sheet results-sheet">
+            <div class="results-crown" aria-hidden="true">🏆</div>
+            <h2 id="results-title"></h2>
+            <div id="results-table" class="results-table"></div>
+            <button id="btn-again" class="big-btn" type="button" hidden>Play again</button>
+            <p id="results-wait" class="muted"></p>
+        </div>
+    </div>
+
+    <!-- Lost connection -->
+    <div id="lost" class="overlay">
+        <div class="sheet small-sheet">
+            <h3>Connection lost</h3>
+            <p class="muted">The host closed the game or the connection dropped.</p>
+            <button id="btn-reload" class="big-btn" type="button">Reconnect</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <canvas id="confetti" aria-hidden="true"></canvas>
+
+    <script src="src/map.js"></script>
+    <script src="src/config.js"></script>
+    <script src="src/rules.js"></script>
+    <script src="src/net.js"></script>
+    <script src="src/audio.js"></script>
+    <script src="src/board.js"></script>
+    <script src="src/ui.js"></script>
+    <script src="src/main.js"></script>
+</body>
+</html>
