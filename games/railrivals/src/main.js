@@ -41,21 +41,25 @@ class RailApp {
         $('lobby-name').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
         const code = (new URLSearchParams(location.search).get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const saved = this.storage('railrivals-name') || '';
+        const saved = this.storage('railrivals-name', undefined, true) || this.storage('railrivals-name') || '';
         if (code) {
             this.joinCode = code;
             this.roomCode = code;
             this.ui.showLobbyName('join', saved, code);
-            if (saved && this.storage(`railrivals-token-${code}`)) this.joinRoom(saved);
+            if (saved && this.storage(`railrivals-token-${code}`, undefined, true)) this.joinRoom(saved);
         } else {
             this.ui.showLobbyName('host', saved);
         }
     }
 
-    storage(key, value) {
+    // perTab: kept only for this tab (sessionStorage). Player tokens live there so
+    // two tabs or windows on one computer are two different players, while a
+    // refresh still rejoins the same seat.
+    storage(key, value, perTab = false) {
         try {
-            if (value === undefined) return localStorage.getItem(key);
-            localStorage.setItem(key, value);
+            const store = perTab ? sessionStorage : localStorage;
+            if (value === undefined) return store.getItem(key);
+            store.setItem(key, value);
         } catch (e) { /* storage blocked: rejoining after a refresh won't work */ }
         return null;
     }
@@ -66,6 +70,7 @@ class RailApp {
 
     async createRoom(name) {
         this.storage('railrivals-name', name);
+        this.storage('railrivals-name', name, true);
         this.ui.setLobbyBusy('Creating room…');
         for (let attempt = 0; attempt < 3; attempt++) {
             try {
@@ -123,7 +128,12 @@ class RailApp {
             // seat 0 belongs to the host and can't be taken over by a guest
             let seat = token ? this.lobby.findIndex((p, i) => i > 0 && p.token === token) : -1;
             if (seat === -1) {
-                if (this.started) return this.net.sendTo(connId, { t: 'error', message: 'This game has already started.' });
+                if (this.started) {
+                    // let the host see that a friend arrived too late
+                    this.game.log(`🚪 ${name} tried to join, but the game had already started.`);
+                    this.broadcast(false);
+                    return this.net.sendTo(connId, { t: 'error', message: 'This game has already started without you. Ask the host to open a new room and wait until everyone has joined before pressing Start.' });
+                }
                 if (this.lobby.length >= MAX_PLAYERS) return this.net.sendTo(connId, { t: 'error', message: 'This room is full (5 players).' });
                 this.lobby.push({ name, token, connId });
                 seat = this.lobby.length - 1;
@@ -230,11 +240,12 @@ class RailApp {
 
     async joinRoom(name) {
         this.storage('railrivals-name', name);
+        this.storage('railrivals-name', name, true);
         this.ui.setLobbyBusy('Joining…');
-        let token = this.storage(`railrivals-token-${this.roomCode}`);
+        let token = this.storage(`railrivals-token-${this.roomCode}`, undefined, true);
         if (!token) {
             token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-            this.storage(`railrivals-token-${this.roomCode}`, token);
+            this.storage(`railrivals-token-${this.roomCode}`, token, true);
         }
         this.net.on('hostMessage', msg => this.onHostMessage(msg));
         this.net.on('hostLeft', () => this.ui.open('lost'));
@@ -243,9 +254,7 @@ class RailApp {
         } catch (err) {
             this.net = new RailNet();
             this.ui.showLobbyName('join', name, this.roomCode);
-            this.ui.showLobbyError(err.message === 'ROOM_NOT_FOUND'
-                ? 'Room not found. The host may have closed the page.'
-                : 'Could not connect to the room. Please try again.');
+            this.ui.showLobbyError(this.joinErrorText(err.message));
             return;
         }
         this.net.sendToHost({ t: 'join', name, token });
@@ -276,6 +285,14 @@ class RailApp {
             this.ui.confettiDone = false;
         }
         this.ui.update(view, seat, fresh);
+    }
+
+    // Tell the player why joining failed, so they know what to try
+    joinErrorText(code) {
+        if (code === 'ROOM_NOT_FOUND') return 'Room not found. The host may have closed or refreshed the page; ask them for a new link.';
+        if (code === 'UNSUPPORTED') return 'This browser cannot join online games. Please try the latest Chrome, Safari, Firefox or Edge.';
+        if (code === 'TIMEOUT') return 'The connection took too long. A strict network (school, office or some mobile data) may block it: try another Wi-Fi or a phone hotspot, then join again.';
+        return 'Could not reach the game server. Check your internet connection and try again.';
     }
 
     dispatch(action, data = {}) {

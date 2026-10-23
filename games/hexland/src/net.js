@@ -60,13 +60,33 @@ class HexlandNet {
     join(code) {
         this.isHost = false;
         return new Promise((resolve, reject) => {
+            if (typeof RTCPeerConnection === 'undefined') {
+                reject(new Error('UNSUPPORTED'));
+                return;
+            }
             this.peer = new Peer();
+            let done = false;
+            const fail = reason => {
+                if (done) return;
+                done = true;
+                clearTimeout(timeout);
+                // drop the half-open connection so it can't join later by surprise
+                try { this.peer.destroy(); } catch (e) { /* already closed */ }
+                reject(new Error(reason));
+            };
 
-            const timeout = setTimeout(() => reject(new Error('TIMEOUT')), 15000);
+            // Connections between different networks (or through a relay)
+            // can take a while, Safari especially: give it 30 seconds
+            const timeout = setTimeout(() => fail('TIMEOUT'), 30000);
 
             this.peer.on('open', () => {
+                // Keep PeerJS's default binary format: it splits big messages
+                // into chunks. ('json' silently drops messages over ~16 KB,
+                // and a game snapshot can be bigger than that.)
                 const conn = this.peer.connect(PEER_PREFIX + code, { reliable: true });
                 conn.on('open', () => {
+                    if (done) return;
+                    done = true;
                     clearTimeout(timeout);
                     this.hostConn = conn;
                     resolve();
@@ -76,10 +96,10 @@ class HexlandNet {
             });
 
             this.peer.on('error', err => {
-                clearTimeout(timeout);
-                if (err.type === 'peer-unavailable') reject(new Error('ROOM_NOT_FOUND'));
-                else if (!this.hostConn) reject(err);
-                else console.warn('Peer error:', err);
+                if (this.hostConn) { console.warn('Peer error:', err); return; }
+                if (err.type === 'peer-unavailable') fail('ROOM_NOT_FOUND');
+                else if (err.type === 'browser-incompatible') fail('UNSUPPORTED');
+                else fail('NETWORK');
             });
         });
     }

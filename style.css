@@ -40,6 +40,7 @@ nav {
     position: sticky;
     top: 0;
     background: var(--nav-bg);
+    -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border);
     z-index: 100;
@@ -729,6 +730,7 @@ body.modal-open { overflow: hidden; }
     inset: 0;
     z-index: 200;
     background: rgba(0, 0, 0, 0.7);
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;

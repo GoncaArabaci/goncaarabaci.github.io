@@ -43,6 +43,7 @@ button:disabled { cursor: not-allowed; }
     padding: 10px 18px;
     background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.75));
     border-bottom: 1px solid var(--panel-border);
+    -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     z-index: 5;
 }
@@ -146,6 +147,7 @@ button:disabled { cursor: not-allowed; }
     border: 1px solid var(--panel-border);
     border-radius: var(--radius);
     padding: 12px;
+    -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
@@ -393,6 +395,7 @@ button:disabled { cursor: not-allowed; }
     border: 1px solid var(--panel-border);
     border-radius: 20px;
     padding: 10px 14px 12px;
+    -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
     box-shadow: 0 -6px 30px rgba(0, 0, 0, 0.25);
 }
@@ -445,6 +448,7 @@ button:disabled { cursor: not-allowed; }
     align-items: center; justify-content: center;
     padding: 16px;
     background: rgba(2, 6, 23, 0.62);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     z-index: 20;
 }

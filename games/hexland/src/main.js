@@ -38,14 +38,14 @@ class HexlandApp {
     bindLobby() {
         const params = new URLSearchParams(location.search);
         const code = (params.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const savedName = this.storage('hexland-name') || '';
+        const savedName = this.storage('hexland-name', undefined, true) || this.storage('hexland-name') || '';
 
         if (code) {
             this.roomCode = code;
             this.ui.showLobbyName('join', savedName, code);
             this.ui.onLobbySubmit = name => this.joinRoom(name);
             // Rejoin automatically after a page refresh
-            if (savedName && this.storage(`hexland-token-${code}`)) this.joinRoom(savedName);
+            if (savedName && this.storage(`hexland-token-${code}`, undefined, true)) this.joinRoom(savedName);
         } else {
             this.ui.showLobbyName('host', savedName);
             this.ui.onLobbySubmit = name => this.createRoom(name);
@@ -55,10 +55,14 @@ class HexlandApp {
         this.ui.onNewGame = () => this.startGame();
     }
 
-    storage(key, value) {
+    // perTab: kept only for this tab (sessionStorage). Player tokens live there so
+    // two tabs or windows on one computer are two different players, while a
+    // refresh still rejoins the same seat.
+    storage(key, value, perTab = false) {
         try {
-            if (value === undefined) return localStorage.getItem(key);
-            localStorage.setItem(key, value);
+            const store = perTab ? sessionStorage : localStorage;
+            if (value === undefined) return store.getItem(key);
+            store.setItem(key, value);
         } catch (e) { /* storage blocked: rejoin-on-refresh just won't work */ }
         return null;
     }
@@ -69,6 +73,7 @@ class HexlandApp {
 
     async createRoom(name) {
         this.storage('hexland-name', name);
+        this.storage('hexland-name', name, true);
         this.ui.setLobbyBusy('Creating room...');
 
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -102,12 +107,13 @@ class HexlandApp {
 
     async joinRoom(name) {
         this.storage('hexland-name', name);
+        this.storage('hexland-name', name, true);
         this.ui.setLobbyBusy('Joining room...');
 
-        let token = this.storage(`hexland-token-${this.roomCode}`);
+        let token = this.storage(`hexland-token-${this.roomCode}`, undefined, true);
         if (!token) {
             token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-            this.storage(`hexland-token-${this.roomCode}`, token);
+            this.storage(`hexland-token-${this.roomCode}`, token, true);
         }
 
         this.net.on('hostMessage', msg => this.onHostMessage(msg));
@@ -118,9 +124,7 @@ class HexlandApp {
         } catch (err) {
             this.net = new HexlandNet();
             this.ui.showLobbyName('join', name, this.roomCode);
-            this.ui.showLobbyError(err.message === 'ROOM_NOT_FOUND'
-                ? 'Room not found. The host may have closed the page.'
-                : 'Could not connect to the room. Please try again.');
+            this.ui.showLobbyError(this.joinErrorText(err.message));
             return;
         }
 
@@ -154,7 +158,9 @@ class HexlandApp {
 
             if (seat === -1) {
                 if (this.started) {
-                    this.net.sendTo(connId, { t: 'error', message: 'This game has already started.' });
+                    this.game.log(`🚪 ${name} tried to join, but the game had already started.`);
+                    this.broadcastState([]);
+                    this.net.sendTo(connId, { t: 'error', message: 'This game has already started without you. Ask the host to open a new room and wait until everyone has joined before pressing Start.' });
                     return;
                 }
                 if (this.lobbyPlayers.length >= MAX_PLAYERS) {
@@ -442,6 +448,14 @@ class HexlandApp {
     }
 
     // ---------- Sending moves ----------
+
+    // Tell the player why joining failed, so they know what to try
+    joinErrorText(code) {
+        if (code === 'ROOM_NOT_FOUND') return 'Room not found. The host may have closed or refreshed the page; ask them for a new link.';
+        if (code === 'UNSUPPORTED') return 'This browser cannot join online games. Please try the latest Chrome, Safari, Firefox or Edge.';
+        if (code === 'TIMEOUT') return 'The connection took too long. A strict network (school, office or some mobile data) may block it: try another Wi-Fi or a phone hotspot, then join again.';
+        return 'Could not reach the game server. Check your internet connection and try again.';
+    }
 
     dispatch(action, data = {}) {
         if (!this.started) return;
