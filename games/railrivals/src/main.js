@@ -91,6 +91,7 @@ class RailApp {
             this.onGuestMessage(id, msg);
         });
         this.net.on('guestLeft', id => this.onGuestLeft(id));
+        this.net.on('status', st => this.onRoomStatus(st));
         this.lastSeen = {};
         setInterval(() => {
             const now = Date.now();
@@ -107,6 +108,18 @@ class RailApp {
             if (this.lobby.length > 1) { e.preventDefault(); e.returnValue = ''; }
         });
         this.refreshLobby();
+    }
+
+    // The room can drop off the signalling server (sleeping laptop,
+    // background tab). New players can't find it until it reconnects.
+    onRoomStatus(st) {
+        const text = st === 'online' ? '' : '🔌 Reconnecting the room… friends can join again in a moment.';
+        if (!this.started) {
+            if (st === 'online') this.refreshLobby();
+            else $('lobby-wait').textContent = text;
+        } else if (text) {
+            this.ui.toast('🔌 Reconnecting the room…');
+        }
     }
 
     refreshLobby() {
@@ -250,7 +263,7 @@ class RailApp {
         this.net.on('hostMessage', msg => this.onHostMessage(msg));
         this.net.on('hostLeft', () => this.ui.open('lost'));
         try {
-            await this.net.join(this.roomCode);
+            await this.net.join(this.roomCode, text => this.ui.setLobbyBusy(text));
         } catch (err) {
             this.net = new RailNet();
             this.ui.showLobbyName('join', name, this.roomCode);

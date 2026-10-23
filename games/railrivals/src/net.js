@@ -5,6 +5,22 @@
 
 const PEER_PREFIX = 'railrivals-room-';
 
+// Optional relay (TURN) for players on strict networks (schools, offices,
+// some mobile data). Fill in a provider's credentials URL that returns a
+// list of ICE servers, e.g. Metered: https://<app>.metered.live/api/v1/turn/credentials?apiKey=<key>
+// The page's Content-Security-Policy must allow that host in connect-src.
+const TURN_CREDENTIALS_URL = '';
+
+const STUN_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+];
+
+// Retry a missing room a few times: the host may be reconnecting
+const ROOM_RETRIES = 3;
+const ROOM_RETRY_MS = 3000;
+
 class RailNet {
     constructor() {
         this.peer = null;
@@ -29,19 +45,42 @@ class RailNet {
         return code;
     }
 
-    // Host: open a room with the given code
-    host(code) {
-        this.isHost = true;
-        return new Promise((resolve, reject) => {
-            this.peer = new Peer(PEER_PREFIX + code);
+    // STUN plus, when configured, the relay servers (never blocks for long)
+    async peerOptions() {
+        let relay = [];
+        if (TURN_CREDENTIALS_URL) {
+            try {
+                const ctrl = new AbortController();
+                const t = setTimeout(() => ctrl.abort(), 4000);
+                const res = await fetch(TURN_CREDENTIALS_URL, { signal: ctrl.signal });
+                clearTimeout(t);
+                const list = await res.json();
+                if (Array.isArray(list)) relay = list;
+            } catch (e) {
+                console.warn('Relay servers unavailable, trying without them:', e);
+            }
+        }
+        return { config: { iceServers: [...STUN_SERVERS, ...relay] } };
+    }
 
-            this.peer.on('open', () => resolve(code));
+    // Host: open a room with the given code
+    async host(code) {
+        this.isHost = true;
+        const options = await this.peerOptions();
+        return new Promise((resolve, reject) => {
+            this.peer = new Peer(PEER_PREFIX + code, options);
+
+            this.peer.on('open', () => {
+                this.emit('status', 'online');
+                resolve(code);
+            });
 
             this.peer.on('error', err => {
-                if (err.type === 'unavailable-id') reject(new Error('ROOM_TAKEN'));
-                else if (!this.peer.open) reject(err);
+                if (err.type === 'unavailable-id' && !this.peer.open) reject(new Error('ROOM_TAKEN'));
+                else if (!this.peer.open && !this.everOpen) reject(err);
                 else console.warn('Peer error:', err);
             });
+            this.peer.on('open', () => { this.everOpen = true; });
 
             this.peer.on('connection', conn => {
                 conn.on('open', () => this.guestConns.set(conn.peer, conn));
@@ -52,20 +91,33 @@ class RailNet {
                 });
             });
 
-            this.peer.on('disconnected', () => this.peer.reconnect());
+            // Losing the signalling server makes the room invisible to new
+            // players ("room not found"), e.g. when the tab sits in the
+            // background or the laptop sleeps. Reconnect whenever we can.
+            const reconnect = () => {
+                if (this.peer && this.peer.disconnected && !this.peer.destroyed) {
+                    this.emit('status', 'reconnecting');
+                    try { this.peer.reconnect(); } catch (e) { /* tries again later */ }
+                }
+            };
+            this.peer.on('disconnected', reconnect);
+            setInterval(reconnect, 5000);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) reconnect(); });
+            window.addEventListener('online', reconnect);
         });
     }
 
-    // Guest: connect to a host's room
-    join(code) {
+    // Guest: connect to a host's room. onStage(text) reports progress.
+    async join(code, onStage = () => {}) {
         this.isHost = false;
+        if (typeof RTCPeerConnection === 'undefined') throw new Error('UNSUPPORTED');
+        onStage('Connecting to the server…');
+        const options = await this.peerOptions();
+
         return new Promise((resolve, reject) => {
-            if (typeof RTCPeerConnection === 'undefined') {
-                reject(new Error('UNSUPPORTED'));
-                return;
-            }
-            this.peer = new Peer();
+            this.peer = new Peer(options);
             let done = false;
+            let tries = 0;
             const fail = reason => {
                 if (done) return;
                 done = true;
@@ -76,13 +128,13 @@ class RailNet {
             };
 
             // Connections between different networks (or through a relay)
-            // can take a while, Safari especially: give it 30 seconds
+            // can take a while: give it 30 seconds
             const timeout = setTimeout(() => fail('TIMEOUT'), 30000);
 
-            this.peer.on('open', () => {
-                // Keep PeerJS's default binary format: it splits big messages
-                // into chunks. ('json' silently drops messages over ~16 KB,
-                // and a game snapshot can be bigger than that.)
+            const connect = () => {
+                onStage(tries ? 'Looking for the room again…' : 'Reaching the host…');
+                // PeerJS's default binary format splits big messages into
+                // chunks ('json' silently drops messages over ~16 KB)
                 const conn = this.peer.connect(PEER_PREFIX + code, { reliable: true });
                 conn.on('open', () => {
                     if (done) return;
@@ -92,13 +144,17 @@ class RailNet {
                     resolve();
                 });
                 conn.on('data', msg => this.emit('hostMessage', msg));
-                conn.on('close', () => this.emit('hostLeft'));
-            });
+                conn.on('close', () => { if (this.hostConn === conn) this.emit('hostLeft'); });
+            };
+
+            this.peer.on('open', connect);
 
             this.peer.on('error', err => {
                 if (this.hostConn) { console.warn('Peer error:', err); return; }
-                if (err.type === 'peer-unavailable') fail('ROOM_NOT_FOUND');
-                else if (err.type === 'browser-incompatible') fail('UNSUPPORTED');
+                if (err.type === 'peer-unavailable') {
+                    if (++tries <= ROOM_RETRIES) setTimeout(() => { if (!done) connect(); }, ROOM_RETRY_MS);
+                    else fail('ROOM_NOT_FOUND');
+                } else if (err.type === 'browser-incompatible') fail('UNSUPPORTED');
                 else fail('NETWORK');
             });
         });

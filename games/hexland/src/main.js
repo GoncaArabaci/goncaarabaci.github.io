@@ -93,6 +93,7 @@ class HexlandApp {
         this.lobbyPlayers = [{ name, token: 'host', connId: null }];
         this.net.on('guestMessage', (connId, msg) => this.onGuestMessage(connId, msg));
         this.net.on('guestLeft', connId => this.onGuestLeft(connId));
+        this.net.on('status', st => this.onRoomStatus(st));
 
         window.addEventListener('beforeunload', e => {
             if (this.lobbyPlayers.length > 1) {
@@ -120,7 +121,7 @@ class HexlandApp {
         this.net.on('hostLeft', () => this.ui.showConnectionLost());
 
         try {
-            await this.net.join(this.roomCode);
+            await this.net.join(this.roomCode, text => this.ui.setLobbyBusy(text));
         } catch (err) {
             this.net = new HexlandNet();
             this.ui.showLobbyName('join', name, this.roomCode);
@@ -130,6 +131,17 @@ class HexlandApp {
 
         this.ui.roomLink = this.roomLink();
         this.net.sendToHost({ t: 'join', name, token });
+    }
+
+    // The room can drop off the signalling server (sleeping laptop,
+    // background tab). New players can't find it until it reconnects.
+    onRoomStatus(st) {
+        if (!this.started) {
+            if (st === 'online') this.refreshLobby();
+            else this.ui.lobbyWait.textContent = '🔌 Reconnecting the room… friends can join again in a moment.';
+        } else if (st !== 'online') {
+            this.renderer.addPopup('🔌 Reconnecting…', this.renderer.width / 2, 60, '#f1c40f');
+        }
     }
 
     refreshLobby() {
