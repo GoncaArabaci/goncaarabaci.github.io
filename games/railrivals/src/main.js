@@ -64,7 +64,18 @@ class RailApp {
         return null;
     }
 
-    roomLink() { return `${location.href.split(/[?#]/)[0]}?room=${this.roomCode}`; }
+    // The part after "#" holds the backup connection's key. Browsers never
+    // send it to any server, so only people with the link can use it.
+    linkKey() {
+        if (this.net && this.net.relayKey) return this.net.relayKey;
+        const k = new URLSearchParams(location.hash.slice(1)).get('k') || '';
+        return /^[A-Za-z0-9_-]{22}$/.test(k) ? k : '';
+    }
+
+    roomLink() {
+        const key = this.linkKey();
+        return `${location.href.split(/[?#]/)[0]}?room=${this.roomCode}${key ? `#k=${key}` : ''}`;
+    }
 
     // ---------- Host ----------
 
@@ -263,6 +274,7 @@ class RailApp {
         this.net.on('hostMessage', msg => this.onHostMessage(msg));
         this.net.on('hostLeft', () => this.ui.open('lost'));
         try {
+            this.net.relayKey = this.linkKey();
             await this.net.join(this.roomCode, text => this.ui.setLobbyBusy(text));
         } catch (err) {
             this.net = new RailNet();

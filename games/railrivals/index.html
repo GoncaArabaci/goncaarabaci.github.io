@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com wss://broker.emqx.io:8084 wss://broker.hivemq.com:8884 wss://test.mosquitto.org:8081; object-src 'none'; base-uri 'self'; form-action 'none'">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <title>Rail Rivals 🚂 Online Train Route Game</title>
     <link rel="stylesheet" href="../../assets/fonts/fonts.css">
@@ -196,6 +196,7 @@
     <script src="src/map.js"></script>
     <script src="src/config.js"></script>
     <script src="src/rules.js"></script>
+    <script src="../shared/relay.js"></script>
     <script src="src/net.js"></script>
     <script src="src/audio.js"></script>
     <script src="src/board.js"></script>

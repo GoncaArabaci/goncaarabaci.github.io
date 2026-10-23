@@ -67,29 +67,67 @@ class RailNet {
     async host(code) {
         this.isHost = true;
         const options = await this.peerOptions();
-        return new Promise((resolve, reject) => {
-            this.peer = new Peer(PEER_PREFIX + code, options);
 
-            this.peer.on('open', () => {
+        // Backup route for guests whose network blocks direct connections.
+        // It doesn't need WebRTC, so it also keeps the room open when the
+        // host's own VPN or DPI tool breaks direct connections.
+        let relayReady = Promise.resolve(0);
+        if (typeof RelayHost !== 'undefined' && window.crypto && crypto.subtle) {
+            this.relayKey = RelayCrypto.newKey();
+            this.relay = new RelayHost(this.relayKey, conn => this.addGuest(conn));
+            relayReady = this.relay.start().catch(e => { console.warn('Backup connection unavailable:', e); return 0; });
+        }
+
+        return new Promise((resolve, reject) => {
+            let settled = false;
+            const ok = () => {
+                if (settled) return;
+                settled = true;
                 this.emit('status', 'online');
                 resolve(code);
+            };
+            const directFailed = async err => {
+                if (settled) return;
+                if (await relayReady > 0) {
+                    console.warn('Direct connections unavailable, using the backup only:', err);
+                    ok();
+                } else if (!settled) {
+                    settled = true;
+                    reject(err);
+                }
+            };
+            const giveUp = setTimeout(() => directFailed(new Error('TIMEOUT')), 12000);
+
+            try {
+                if (typeof RTCPeerConnection === 'undefined') throw new Error('UNSUPPORTED');
+                this.peer = new Peer(PEER_PREFIX + code, options);
+            } catch (e) {
+                clearTimeout(giveUp);
+                directFailed(e);
+                return;
+            }
+
+            this.peer.on('open', () => {
+                clearTimeout(giveUp);
+                this.everOpen = true;
+                ok();
+                this.emit('status', 'online');
             });
 
             this.peer.on('error', err => {
-                if (err.type === 'unavailable-id' && !this.peer.open) reject(new Error('ROOM_TAKEN'));
-                else if (!this.peer.open && !this.everOpen) reject(err);
-                else console.warn('Peer error:', err);
+                if (err.type === 'unavailable-id' && !this.peer.open && !settled) {
+                    settled = true;
+                    clearTimeout(giveUp);
+                    reject(new Error('ROOM_TAKEN'));
+                } else if (!this.peer.open && !this.everOpen) {
+                    clearTimeout(giveUp);
+                    directFailed(err);
+                } else {
+                    console.warn('Peer error:', err);
+                }
             });
-            this.peer.on('open', () => { this.everOpen = true; });
 
-            this.peer.on('connection', conn => {
-                conn.on('open', () => this.guestConns.set(conn.peer, conn));
-                conn.on('data', msg => this.emit('guestMessage', conn.peer, msg));
-                conn.on('close', () => {
-                    this.guestConns.delete(conn.peer);
-                    this.emit('guestLeft', conn.peer);
-                });
-            });
+            this.peer.on('connection', conn => this.addGuest(conn));
 
             // Losing the signalling server makes the room invisible to new
             // players ("room not found"), e.g. when the tab sits in the
@@ -107,8 +145,39 @@ class RailNet {
         });
     }
 
-    // Guest: connect to a host's room. onStage(text) reports progress.
+    // A guest connection, direct (PeerJS) or through the backup relay
+    addGuest(conn) {
+        if (conn.open) this.guestConns.set(conn.peer, conn);
+        conn.on('open', () => this.guestConns.set(conn.peer, conn));
+        conn.on('data', msg => this.emit('guestMessage', conn.peer, msg));
+        conn.on('close', () => {
+            this.guestConns.delete(conn.peer);
+            this.emit('guestLeft', conn.peer);
+        });
+    }
+
+    // Guest: connect to a host's room. Tries a direct connection first, then
+    // the backup relay (needs relayKey from the invite link).
     async join(code, onStage = () => {}) {
+        const canRelay = !!(this.relayKey && typeof relayJoin !== 'undefined' && window.crypto && crypto.subtle);
+        try {
+            await this.joinDirect(code, onStage, canRelay ? 15000 : 30000);
+        } catch (err) {
+            // also when WebRTC is switched off (some VPNs and privacy add-ons)
+            if (!canRelay) throw err;
+            try {
+                const conn = await relayJoin(this.relayKey, onStage);
+                this.hostConn = conn;
+                conn.on('data', msg => this.emit('hostMessage', msg));
+                conn.on('close', () => this.emit('hostLeft'));
+                window.addEventListener('pagehide', () => conn.bye());
+            } catch (relayErr) {
+                throw err;   // the direct error explains more
+            }
+        }
+    }
+
+    async joinDirect(code, onStage, waitMs) {
         this.isHost = false;
         if (typeof RTCPeerConnection === 'undefined') throw new Error('UNSUPPORTED');
         onStage('Connecting to the server…');
@@ -127,9 +196,8 @@ class RailNet {
                 reject(new Error(reason));
             };
 
-            // Connections between different networks (or through a relay)
-            // can take a while: give it 30 seconds
-            const timeout = setTimeout(() => fail('TIMEOUT'), 30000);
+            // Connections between different networks can take a while
+            const timeout = setTimeout(() => fail('TIMEOUT'), waitMs);
 
             const connect = () => {
                 onStage(tries ? 'Looking for the room again…' : 'Reaching the host…');

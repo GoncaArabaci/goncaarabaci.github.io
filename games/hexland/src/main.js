@@ -67,8 +67,17 @@ class HexlandApp {
         return null;
     }
 
+    // The part after "#" holds the backup connection's key. Browsers never
+    // send it to any server, so only people with the link can use it.
+    linkKey() {
+        if (this.net && this.net.relayKey) return this.net.relayKey;
+        const k = new URLSearchParams(location.hash.slice(1)).get('k') || '';
+        return /^[A-Za-z0-9_-]{22}$/.test(k) ? k : '';
+    }
+
     roomLink() {
-        return `${location.href.split(/[?#]/)[0]}?room=${this.roomCode}`;
+        const key = this.linkKey();
+        return `${location.href.split(/[?#]/)[0]}?room=${this.roomCode}${key ? `#k=${key}` : ''}`;
     }
 
     async createRoom(name) {
@@ -121,6 +130,7 @@ class HexlandApp {
         this.net.on('hostLeft', () => this.ui.showConnectionLost());
 
         try {
+            this.net.relayKey = this.linkKey();
             await this.net.join(this.roomCode, text => this.ui.setLobbyBusy(text));
         } catch (err) {
             this.net = new HexlandNet();
