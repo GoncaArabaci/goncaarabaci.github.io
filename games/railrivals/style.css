@@ -693,3 +693,12 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- Stations ---------- */
+.city-hit { fill: transparent; }
+.city.can-station { cursor: pointer; }
+/* only the city under the pointer lights up, so the map stays calm */
+.city.can-station:hover .city-ring { stroke: var(--accent); stroke-width: 3.4; stroke-dasharray: 3 2.5; fill: #fff7ed; animation: station-spin 6s linear infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes station-spin { to { transform: rotate(360deg); } }
+.station-piece { transform-box: fill-box; transform-origin: center bottom; filter: drop-shadow(0 1.5px 1px rgba(15, 23, 42, 0.5)); }
+.station-piece.drop { animation: drop 0.6s var(--spring) both; }

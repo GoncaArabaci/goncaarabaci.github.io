@@ -88,7 +88,9 @@ class RailBoard {
         this.routeLayer = svg('g', { class: 'routes', filter: 'url(#soft-shadow)' }, s);
         this.trainLayer = svg('g', { class: 'trains' }, s);
         this.cityLayer = svg('g', { class: 'cities' }, s);
+        this.stationLayer = svg('g', { class: 'stations' }, s);
         this.fxLayer = svg('g', { class: 'fx' }, s);
+        this.stationsDrawn = {};
 
         MAP.routes.forEach(r => this.buildRoute(r));
         this.buildDecor();
@@ -209,6 +211,58 @@ class RailBoard {
         label.textContent = c.name;
         this.cityEls = this.cityEls || {};
         this.cityEls[c.id] = g;
+
+        // a bigger invisible circle makes small cities easy to tap
+        svg('circle', { r: 15, class: 'city-hit' }, g);
+        g.addEventListener('click', e => {
+            e.stopPropagation();
+            if (this.handlers.onCityClick) this.handlers.onCityClick(c.id);
+        });
+        g.addEventListener('pointerenter', e => this.handlers.onCityHover && this.handlers.onCityHover(c.id, e));
+        g.addEventListener('pointermove', e => this.handlers.onCityHover && this.handlers.onCityHover(c.id, e));
+        g.addEventListener('pointerleave', () => this.handlers.onCityHover && this.handlers.onCityHover(null));
+    }
+
+    // stationsAt: cityId -> playerId; animateCity: the one just built
+    updateStations(stationsAt, animateCity = null) {
+        Object.keys(this.stationsDrawn).forEach(cid => {
+            if (stationsAt[cid] === undefined) {
+                this.stationLayer.querySelector(`[data-city="${cid}"]`)?.remove();
+                delete this.stationsDrawn[cid];
+            }
+        });
+        Object.entries(stationsAt).forEach(([cid, pid]) => {
+            if (this.stationsDrawn[cid] === pid) return;
+            const c = this.cities[cid];
+            const outer = svg('g', { transform: `translate(${c.x + 13},${c.y - 14}) scale(1.35)`, 'data-city': cid }, this.stationLayer);
+            const st = svg('g', { class: cid === animateCity ? 'station-piece drop' : 'station-piece' }, outer);
+            const fill = PLAYER_STYLE[pid].fill;
+            svg('path', { d: 'M-8,1 L0,-8 L8,1 Z', fill, stroke: '#fff', 'stroke-width': 1.6, 'stroke-linejoin': 'round' }, st);
+            svg('rect', { x: -6.5, y: 0, width: 13, height: 9, rx: 1.5, fill, stroke: '#fff', 'stroke-width': 1.6 }, st);
+            svg('rect', { x: -2, y: 3.5, width: 4, height: 5.5, rx: 0.8, fill: '#0f172a' }, st);
+            if (cid === animateCity) this.puff(c.x + 12, c.y - 10, 300);
+            this.stationsDrawn[cid] = pid;
+        });
+    }
+
+    markStationable(ids) {
+        const set = new Set(ids);
+        Object.entries(this.cityEls).forEach(([id, el]) => el.classList.toggle('can-station', set.has(id)));
+    }
+
+    floatTextAt(cityId, text, color) {
+        const c = this.cities[cityId];
+        const t = svg('text', { x: c.x, y: c.y - 24, class: 'float-score', 'text-anchor': 'middle', fill: color }, this.fxLayer);
+        t.textContent = text;
+        setTimeout(() => t.remove(), 1800);
+    }
+
+    cityScreenPoint(id) {
+        const c = this.cities[id];
+        const pt = this.svg.createSVGPoint();
+        pt.x = c.x; pt.y = c.y;
+        const p = pt.matrixTransform(this.svg.getScreenCTM());
+        return { x: p.x, y: p.y };
     }
 
     // ---------- Updates ----------

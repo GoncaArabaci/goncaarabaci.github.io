@@ -18,10 +18,12 @@ class RailGame {
             pendingTickets: [],
             trains: START_TRAINS,
             routePoints: 0,
+            stations: STATIONS,
             online: true
         }));
 
         this.owner = {};              // routeId -> playerId
+        this.stationsAt = {};         // cityId -> playerId
         this.deck = [];
         this.discard = [];
         this.market = [];
@@ -216,6 +218,61 @@ class RailGame {
         return true;
     }
 
+    // ---------- Stations ----------
+    // A station on a city lets its owner use one opponent route out of that
+    // city for their tickets at the end. The 1st costs 1 card, the 2nd 2 of
+    // one color, the 3rd 3 of one color (wilds fill in).
+
+    stationCost(playerId) {
+        return STATIONS - this.players[playerId].stations + 1;
+    }
+
+    stationBlocked(playerId, cityId) {
+        if (!this.cities[cityId]) return 'No such city.';
+        if (this.stationsAt[cityId] !== undefined) return 'This city already has a station.';
+        if (this.players[playerId].stations <= 0) return 'You have no stations left.';
+        return '';
+    }
+
+    stationPaymentOptions(playerId) {
+        const p = this.players[playerId];
+        if (!p.hand || p.stations <= 0) return [];
+        const n = this.stationCost(playerId);
+        const options = [];
+        CARD_COLORS.forEach(color => {
+            for (let use = Math.min(p.hand[color], n); use >= 1; use--) {
+                if (n - use <= p.hand[LOCO]) options.push({ color, colorCount: use, locos: n - use });
+            }
+        });
+        if (p.hand[LOCO] >= n) options.push({ color: CARD_COLORS[0], colorCount: 0, locos: n });
+        return options;
+    }
+
+    buildStation(playerId, cityId, payment) {
+        if (this.phase !== 'TURN' || playerId !== this.turnIndex || this.drawnThisTurn > 0) return false;
+        if (this.stationBlocked(playerId, cityId)) return false;
+        const p = this.current;
+        const n = this.stationCost(playerId);
+        const color = payment && payment.color;
+        const colorCount = Math.floor(Number(payment && payment.colorCount) || 0);
+        const locos = Math.floor(Number(payment && payment.locos) || 0);
+        if (!CARD_COLORS.includes(color) || colorCount < 0 || locos < 0 || colorCount + locos !== n) return false;
+        if (p.hand[color] < colorCount || p.hand[LOCO] < locos) return false;
+
+        p.hand[color] -= colorCount;
+        p.hand[LOCO] -= locos;
+        for (let i = 0; i < colorCount; i++) this.discard.push(color);
+        for (let i = 0; i < locos; i++) this.discard.push(LOCO);
+
+        p.stations--;
+        this.stationsAt[cityId] = p.id;
+        this.passesInARow = 0;
+        this.lastAction = { type: 'station', player: p.id, city: cityId };
+        this.log(`🚉 ${p.name} built a station in ${this.cities[cityId].name}.`);
+        this.endTurn();
+        return true;
+    }
+
     // ---------- Tickets ----------
 
     drawTickets(playerId) {
@@ -292,13 +349,14 @@ class RailGame {
         return this.keepTickets(playerId, p.pendingTickets.slice(0, n));
     }
 
-    // Nothing left to draw and no route you can pay for: you may pass
+    // No cards left to take and no route you can pay for: you may pass.
+    // (Nobody is forced to take tickets or build stations just to move.)
     canPass(playerId) {
         if (this.phase !== 'TURN' || playerId !== this.turnIndex) return false;
         if (this.deck.length + this.discard.length > 0) return false;
         if (this.market.some(c => c && (c !== LOCO || this.drawnThisTurn === 0))) return false;
-        if (this.drawnThisTurn === 0 && this.ticketDeck.length > 0) return false;
-        return this.drawnThisTurn > 0 || !this.routes.some(r =>
+        if (this.drawnThisTurn > 0) return true;
+        return !this.routes.some(r =>
             !this.routeBlocked(playerId, r.id) && this.paymentOptions(playerId, r.id).length > 0);
     }
 
@@ -332,12 +390,40 @@ class RailGame {
         return this.routes.filter(r => this.owner[r.id] === playerId);
     }
 
-    ticketDone(playerId, ticketId) {
+    // extra: opponent routes this player may use through their stations
+    ticketDone(playerId, ticketId, extra = []) {
         const t = this.ticketInfo[ticketId];
         const parent = {};
         const find = x => (parent[x] === undefined || parent[x] === x ? (parent[x] = x) : (parent[x] = find(parent[x])));
-        this.playerRoutes(playerId).forEach(r => { parent[find(r.a)] = find(r.b); });
+        [...this.playerRoutes(playerId), ...extra].forEach(r => { parent[find(r.a)] = find(r.b); });
         return find(t.a) === find(t.b);
+    }
+
+    // Each station borrows at most one opponent route touching its city.
+    // Try every choice (at most a few hundred) and keep the one that scores
+    // the most ticket points.
+    bestStationUse(playerId) {
+        const p = this.players[playerId];
+        const tickets = p.tickets || [];
+        const mine = Object.keys(this.stationsAt).filter(c => this.stationsAt[c] === playerId);
+        const choices = mine.map(city => [null, ...this.routes.filter(r =>
+            (r.a === city || r.b === city) && this.owner[r.id] !== undefined && this.owner[r.id] !== playerId)]);
+
+        let best = null;
+        const walk = (i, picked) => {
+            if (i === choices.length) {
+                const extra = picked.filter(Boolean);
+                const done = tickets.filter(id => this.ticketDone(playerId, id, extra));
+                const net = tickets.reduce((s, id) => s + (done.includes(id) ? 1 : -1) * this.ticketInfo[id].points, 0);
+                if (!best || net > best.net || (net === best.net && extra.length < best.borrowed.length)) {
+                    best = { done, net, borrowed: extra.map(x => x.id) };
+                }
+                return;
+            }
+            choices[i].forEach(c => walk(i + 1, [...picked, c]));
+        };
+        walk(0, []);
+        return best;
     }
 
     // Longest continuous path; each route used once, cities may repeat
@@ -367,11 +453,13 @@ class RailGame {
         const lengths = this.players.map(p => this.longestPath(p.id));
         const top = Math.max(...lengths);
         this.final = this.players.map(p => {
-            const done = p.tickets.filter(id => this.ticketDone(p.id, id));
+            const use = this.bestStationUse(p.id);
+            const done = use.done;
             const failed = p.tickets.filter(id => !done.includes(id));
             const plus = done.reduce((s, id) => s + this.ticketInfo[id].points, 0);
             const minus = failed.reduce((s, id) => s + this.ticketInfo[id].points, 0);
             const bonus = top > 0 && lengths[p.id] === top ? LONGEST_ROUTE_BONUS : 0;
+            const stationBonus = p.stations * STATION_POINTS;
             return {
                 id: p.id,
                 routes: p.routePoints,
@@ -381,7 +469,10 @@ class RailGame {
                 ticketMinus: minus,
                 longest: lengths[p.id],
                 bonus,
-                total: p.routePoints + plus - minus + bonus
+                stationBonus,
+                stationsLeft: p.stations,
+                borrowed: use.borrowed,
+                total: p.routePoints + plus - minus + bonus + stationBonus
             };
         });
         // Winner: most points, then most tickets done, then longest route
@@ -405,6 +496,7 @@ class RailGame {
                     name: p.name,
                     trains: p.trains,
                     routePoints: p.routePoints,
+                    stations: p.stations,
                     online: p.online,
                     handCount: this.handSize(p),
                     ticketCount: p.tickets.length,
@@ -415,6 +507,7 @@ class RailGame {
                 };
             }),
             owner: { ...this.owner },
+            stationsAt: { ...this.stationsAt },
             market: [...this.market],
             deckCount: this.deck.length,
             discardCount: this.discard.length,
@@ -446,6 +539,7 @@ class RailGame {
             name: String(p.name || `Player ${i + 1}`).slice(0, 16),
             trains: int(p.trains),
             routePoints: int(p.routePoints),
+            stations: Math.min(STATIONS, int(p.stations)),
             online: p.online !== false,
             handCount: int(p.handCount),
             ticketCount: int(p.ticketCount),
@@ -458,6 +552,10 @@ class RailGame {
         Object.entries(s.owner || {}).forEach(([rid, pid]) => {
             if (g.routes[rid] && g.players[pid]) g.owner[rid] = pid;
         });
+        g.stationsAt = {};
+        Object.entries(s.stationsAt || {}).forEach(([cid, pid]) => {
+            if (g.cities[cid] && g.players[pid]) g.stationsAt[cid] = pid;
+        });
         g.market = (s.market || []).slice(0, MARKET_SIZE).map(c => (cardOk(c) ? c : null));
         g.deck = new Array(Math.min(200, int(s.deckCount))).fill(null);
         g.discard = new Array(Math.min(200, int(s.discardCount))).fill(null);
@@ -469,6 +567,8 @@ class RailGame {
         g.final = Array.isArray(s.final) ? s.final.map(f => ({
             id: int(f.id), routes: int(f.routes), ticketPlus: int(f.ticketPlus), ticketMinus: int(f.ticketMinus),
             longest: int(f.longest), bonus: int(f.bonus), total: Number(f.total) || 0,
+            stationBonus: int(f.stationBonus), stationsLeft: int(f.stationsLeft),
+            borrowed: Array.isArray(f.borrowed) ? f.borrowed.filter(id => Number.isInteger(id) && g.routes[id]) : [],
             ticketsDone: ticketIds(f.ticketsDone), ticketsFailed: ticketIds(f.ticketsFailed)
         })) : null;
         g.winnerId = s.winnerId === null || s.winnerId === undefined ? null : int(s.winnerId);
@@ -479,6 +579,7 @@ class RailGame {
             slot: int(s.lastAction.slot),
             card: cardOk(s.lastAction.card) ? s.lastAction.card : null,
             routeId: int(s.lastAction.routeId),
+            city: g.cities[s.lastAction.city] ? s.lastAction.city : null,
             points: int(s.lastAction.points),
             count: int(s.lastAction.count),
             finalRound: !!s.lastAction.finalRound

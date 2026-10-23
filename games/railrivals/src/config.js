@@ -9,6 +9,8 @@ const START_CARDS = 4;
 const START_TRAINS = 45;
 const FINAL_ROUND_AT = 2;            // trains left that start the last round
 const LONGEST_ROUTE_BONUS = 10;
+const STATIONS = 3;                  // train stations per player
+const STATION_POINTS = 4;            // each station never built is worth this
 
 // Points for claiming a route of each length
 const ROUTE_POINTS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 10, 6: 15 };

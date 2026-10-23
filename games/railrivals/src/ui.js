@@ -22,7 +22,9 @@ class RailUI {
 
         this.board = new RailBoard($('board'), {
             onRouteClick: id => this.clickRoute(id),
-            onRouteHover: (id, e) => this.hoverRouteAt(id, e)
+            onRouteHover: (id, e) => this.hoverRouteAt(id, e),
+            onCityClick: id => this.clickCity(id),
+            onCityHover: (id, e) => this.hoverCityAt(id, e)
         });
         this.landPath = this.board.landPath;
         this.bind();
@@ -182,6 +184,9 @@ class RailUI {
         if (act && (act.type === 'market' || act.type === 'deck')) this.flyCard(act);
 
         this.board.updateOwners(game.owner, act && act.type === 'claim' ? act.routeId : null);
+        this.board.updateStations(game.stationsAt, act && act.type === 'station' ? act.city : null);
+        // which of my tickets are done, counting what my stations can borrow
+        this.myDone = new Set(me && me.tickets && game.phase !== 'SETUP_TICKETS' ? game.bestStationUse(me.id).done : []);
 
         this.renderTurn();
         this.renderPlayers();
@@ -216,6 +221,10 @@ class RailUI {
             setTimeout(() => this.board.shake(), r.length * 90 + 250);
             sound.claim(r.length);
             if (act.player === this.mySeat) this.checkTicketsDone(r.length * 90 + 500);
+        } else if (act.type === 'station' && act.city) {
+            this.board.floatTextAt(act.city, '🚉', PLAYER_STYLE[act.player].light);
+            sound.claim(1);
+            if (act.player === this.mySeat) this.checkTicketsDone(700);
         } else if (act.type === 'tickets_kept') {
             sound.card();
         }
@@ -229,7 +238,7 @@ class RailUI {
         if (!me || !me.tickets) return;
         me.tickets.forEach(id => {
             if (this.doneTickets.has(id)) return;
-            if (this.game.ticketDone(me.id, id)) {
+            if (this.myDone.has(id)) {
                 this.doneTickets.add(id);
                 const t = MAP.tickets[id];
                 setTimeout(() => {
@@ -274,7 +283,7 @@ class RailUI {
                 <span class="avatar">${esc(p.name.slice(0, 1).toUpperCase())}</span>
                 <div>
                     <div class="pname">${esc(p.name)}${p.id === this.mySeat ? ' <span class="tag">you</span>' : ''}${p.online ? '' : ' <span class="tag">away</span>'}</div>
-                    <div class="pstats"><span title="Trains left">🚃 ${p.trains}</span><span title="Cards">🃏 ${g.handSize(p)}</span><span title="Tickets">🎫 ${p.tickets ? p.tickets.length : p.ticketCount}</span></div>
+                    <div class="pstats"><span title="Trains left">🚃 ${p.trains}</span><span title="Stations left">🚉 ${p.stations}</span><span title="Cards">🃏 ${g.handSize(p)}</span><span title="Tickets">🎫 ${p.tickets ? p.tickets.length : p.ticketCount}</span></div>
                 </div>
                 <span class="pscore ${bump ? 'bump' : ''}" title="Route points">${p.routePoints}</span>
             </div>`;
@@ -311,6 +320,7 @@ class RailUI {
         if (!me || !me.hand) { $('hand').innerHTML = ''; return; }
         $('tray-title').textContent = `${me.name}'s hand`;
         $('my-trains').textContent = me.trains;
+        $('my-stations').textContent = me.stations;
         const order = [LOCO, ...CARD_COLORS];
         const html = order.filter(c => me.hand[c] > 0).map(c => {
             const n = me.hand[c];
@@ -328,7 +338,7 @@ class RailUI {
         if (!me || !me.tickets) { $('my-tickets').innerHTML = ''; return; }
         $('my-tickets').innerHTML = me.tickets.map(id => {
             const t = MAP.tickets[id];
-            const done = this.game.ticketDone(me.id, id);
+            const done = this.myDone.has(id);
             if (done) this.doneTickets.add(id);
             return `<div class="mini-ticket ${t.long ? 'long' : ''} ${done ? 'done' : ''}" data-ticket="${id}">
                 <span class="tk-done">${done ? '✅' : ''}</span>
@@ -354,6 +364,79 @@ class RailUI {
         });
         this.board.markClaimable(ok);
         this.board.markBlocked(blocked);
+
+        const canStation = this.isMyTurn() && g.drawnThisTurn === 0 && this.me && this.me.hand &&
+            g.stationPaymentOptions(this.mySeat).length > 0;
+        this.board.markStationable(canStation ? MAP.cities.filter(c => g.stationsAt[c.id] === undefined).map(c => c.id) : []);
+    }
+
+    // ---------- Stations ----------
+
+    cityInfo(id) {
+        const g = this.game;
+        const c = g.cities[id];
+        let line = `<b>${esc(c.name)}</b>`;
+        const owner = g.stationsAt[id];
+        if (owner !== undefined) {
+            line += `<br>🚉 Station of ${esc(g.players[owner].name)}`;
+        } else if (this.isMyTurn() && g.drawnThisTurn === 0 && this.me && this.me.stations > 0) {
+            const n = g.stationCost(this.mySeat);
+            line += `<br>Tap to build a station · ${n} card${n > 1 ? 's' : ''} of one color`;
+        }
+        return line;
+    }
+
+    hoverCityAt(id, e) {
+        if (id === null) { $('route-tip').hidden = true; return; }
+        if (!this.game || !e) return;
+        const wrap = $('board-wrap').getBoundingClientRect();
+        const tip = $('route-tip');
+        tip.innerHTML = this.cityInfo(id);
+        tip.hidden = false;
+        tip.style.left = `${Math.min(Math.max(e.clientX - wrap.left, 110), wrap.width - 110)}px`;
+        tip.style.top = `${Math.max(e.clientY - wrap.top, 80)}px`;
+    }
+
+    clickCity(id) {
+        const g = this.game;
+        if (!g || this.mySeat === null || !this.isMyTurn()) return;
+        $('route-tip').hidden = true;
+        if (g.drawnThisTurn > 0) { this.toast('Take your second card first'); return; }
+        const c = g.cities[id];
+        const why = g.stationBlocked(this.mySeat, id);
+        const n = this.me.stations > 0 ? g.stationCost(this.mySeat) : 0;
+        const options = why ? [] : g.stationPaymentOptions(this.mySeat);
+
+        this.board.selectRoute(null);
+        $('claim-title').textContent = `🚉 Station in ${c.name}`;
+        $('claim-meta').innerHTML = why ? '' : `Costs <b>${n} card${n > 1 ? 's' : ''}</b> of one color. At the end it lets you use one rival route from ${esc(c.name)} for your tickets. Unused stations are worth +${STATION_POINTS} each.`;
+        if (why || !options.length) {
+            $('claim-options').innerHTML = `<div class="claim-warn">${esc(why || `You need ${n} cards of one color (wilds count).`)}</div>`;
+            sound.error();
+        } else {
+            $('claim-options').innerHTML = options.map((o, i) => this.payButton(o, i, 'Build →')).join('');
+            $('claim-options').querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => {
+                this.closeClaim();
+                this.onAction('station', { cityId: id, payment: options[Number(b.dataset.opt)] });
+            }));
+        }
+        this.placePopover(this.board.cityScreenPoint(id));
+    }
+
+    payButton(o, i, go) {
+        const chips = [];
+        for (let k = 0; k < o.colorCount; k++) chips.push(`<span class="chip" style="background:${CARD_STYLE[o.color].fill}"></span>`);
+        for (let k = 0; k < o.locos; k++) chips.push(`<span class="chip" style="background:${CARD_STYLE.loco.css}"></span>`);
+        const label = o.colorCount ? `${o.colorCount} ${CARD_STYLE[o.color].name.toLowerCase()}${o.locos ? ` + ${o.locos} wild` : ''}` : `${o.locos} wild`;
+        return `<button type="button" class="pay-btn" data-opt="${i}">${chips.join('')}<span>${label}</span><span class="go">${go}</span></button>`;
+    }
+
+    placePopover(p) {
+        const pop = $('claim');
+        pop.hidden = false;
+        const w = 310;
+        pop.style.left = `${Math.min(Math.max(p.x - w / 2, 10), window.innerWidth - w - 10)}px`;
+        pop.style.top = `${Math.min(p.y + 18, window.innerHeight - 260)}px`;
     }
 
     // ---------- Tickets ----------
@@ -561,7 +644,7 @@ class RailUI {
                 <span class="res-rank">${i + 1}</span>
                 <div>
                     <div class="res-name">${esc(p.name)}${f.id === this.mySeat ? ' (you)' : ''}</div>
-                    <div class="res-break">Routes ${f.routes} · <span class="pos">Tickets +${f.ticketPlus} (${f.ticketsDone.length})</span> · <span class="neg">−${f.ticketMinus} (${f.ticketsFailed.length})</span>${f.bonus ? ` · 🛤️ Longest line +${f.bonus}` : ''} · line ${f.longest}</div>
+                    <div class="res-break">Routes ${f.routes} · <span class="pos">Tickets +${f.ticketPlus} (${f.ticketsDone.length})</span> · <span class="neg">−${f.ticketMinus} (${f.ticketsFailed.length})</span>${f.bonus ? ` · 🛤️ Longest line +${f.bonus}` : ''}${f.stationBonus ? ` · 🚉 Unused stations +${f.stationBonus}` : ''}${f.borrowed && f.borrowed.length ? ` · 🚉 borrowed ${f.borrowed.length} route${f.borrowed.length > 1 ? 's' : ''}` : ''} · line ${f.longest}</div>
                 </div>
                 <span class="res-total">${f.total}</span>
             </div>`;

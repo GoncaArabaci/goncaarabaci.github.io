@@ -206,6 +206,7 @@ class RailApp {
             case 'tickets': ok = g.drawTickets(seat); break;
             case 'pass': ok = g.pass(seat); break;
             case 'keep_tickets': ok = Array.isArray(data.ids) && g.keepTickets(seat, data.ids.map(Number).filter(Number.isInteger)); break;
+            case 'station': ok = typeof data.cityId === 'string' && g.buildStation(seat, data.cityId, data.payment || {}); break;
             case 'claim': {
                 const routeId = Math.floor(Number(data.routeId));
                 ok = Number.isInteger(routeId) && g.claimRoute(seat, routeId, data.payment || {});
