@@ -42,10 +42,9 @@ class RailBoard {
 
         const defs = svg('defs', {}, s);
         defs.innerHTML = `
-            <radialGradient id="sea" cx="50%" cy="45%" r="75%">
-                <stop offset="0" stop-color="#1e6f8f"/>
-                <stop offset="0.6" stop-color="#155a78"/>
-                <stop offset="1" stop-color="#0b3550"/>
+            <radialGradient id="sea" cx="50%" cy="50%" r="70%">
+                <stop offset="0" stop-color="#1f7396"/>
+                <stop offset="1" stop-color="#11496a"/>
             </radialGradient>
             <linearGradient id="land" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stop-color="#d9e8b4"/>
@@ -67,26 +66,33 @@ class RailBoard {
                 <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#04202f" flood-opacity="0.55"/>
             </filter>`;
 
+        // the sea reaches past the board so wide or tall screens show more sea, not a gap
+        svg('rect', { x: -1000, y: -1000, width: BOARD_W + 2000, height: BOARD_H + 2000, fill: '#11496a' }, s);
         svg('rect', { width: BOARD_W, height: BOARD_H, fill: 'url(#sea)' }, s);
-        svg('rect', { width: BOARD_W, height: BOARD_H, fill: 'url(#waves)' }, s);
+        svg('rect', { x: -1000, y: -1000, width: BOARD_W + 2000, height: BOARD_H + 2000, fill: 'url(#waves)' }, s);
 
-        // Turkey: one smoothed outline, the Sea of Marmara cut out on top
-        const landPath = this.smoothPath(MAP.outline);
+        // Neighbouring countries, muted, so Turkey stands out
+        svg('path', { d: MAP.neighbours.join(''), class: 'neighbours' }, s);
+
+        // Turkey (real outline) and its lakes
+        const landPath = MAP.land.join('');
         svg('path', { d: landPath, class: 'shore-glow' }, s);
-        svg('path', { d: landPath, fill: 'url(#land)', stroke: '#f5f0d8', 'stroke-width': 4, filter: 'url(#land-shadow)', class: 'land' }, s);
-        MAP.lakes.forEach(l => svg('path', { d: this.smoothPath(l), fill: '#1b6585', stroke: '#f5f0d8', 'stroke-width': 3 }, s));
+        svg('path', { d: landPath, fill: 'url(#land)', class: 'land', filter: 'url(#land-shadow)' }, s);
+        svg('path', { d: MAP.lakes.join(''), class: 'lake' }, s);
         this.landPath = landPath;
-        this.landPoly = MAP.outline;
+        this.landShape = new Path2D(landPath);
+        this.lakeShape = new Path2D(MAP.lakes.join(''));
+        this.hitCtx = document.createElement('canvas').getContext('2d');
 
-        // sea names
-        [['Karadeniz', 470, 26], ['Akdeniz', 360, 548], ['Ege', 22, 330]].forEach(([name, x, y]) => {
-            const t = svg('text', { x, y, class: 'sea-label', 'text-anchor': name === 'Ege' ? 'start' : 'middle' }, s);
+        MAP.seaLabels.forEach(([name, x, y]) => {
+            const t = svg('text', { x, y, class: 'sea-label', 'text-anchor': 'middle' }, s);
             t.textContent = name;
         });
 
         this.decorLayer = svg('g', { class: 'decor' }, s);
         this.routeLayer = svg('g', { class: 'routes', filter: 'url(#soft-shadow)' }, s);
         this.trainLayer = svg('g', { class: 'trains' }, s);
+        this.borrowLayer = svg('g', { class: 'borrowed' }, s);
         this.cityLayer = svg('g', { class: 'cities' }, s);
         this.stationLayer = svg('g', { class: 'stations' }, s);
         this.fxLayer = svg('g', { class: 'fx' }, s);
@@ -97,101 +103,118 @@ class RailBoard {
         MAP.cities.forEach(c => this.buildCity(c));
     }
 
-    // ---------- Island ----------
-
-    smoothPath(pts) {
-        const n = pts.length;
-        let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
-        for (let i = 0; i < n; i++) {
-            const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
-            const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
-            const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
-            d += ` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
-        }
-        return d + 'Z';
-    }
+    // ---------- Land ----------
 
     insideLand(x, y) {
-        if (MAP.lakes.some(l => this.inPoly(l, x, y))) return false;
-        return this.inPoly(this.landPoly, x, y);
+        return this.hitCtx.isPointInPath(this.landShape, x, y) && !this.hitCtx.isPointInPath(this.lakeShape, x, y);
     }
 
-    inPoly(p, x, y) {
-        let inside = false;
-        for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-            if ((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) inside = !inside;
-        }
-        return inside;
-    }
-
-    // Trees and hills in the empty spaces between tracks
+    // Mountains where Turkey has them (Taurus, east), forests on the
+    // Black Sea side, a few trees elsewhere; kept clear of tracks and cities
     buildDecor() {
-        const segs = MAP.routes.map(r => [this.cities[r.a], this.cities[r.b]]);
-        const distSeg = (x, y, a, b) => {
-            const dx = b.x - a.x, dy = b.y - a.y;
-            const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy)));
-            return Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
-        };
+        const near = (x, y, gap) => MAP.routes.some(r => {
+            const pts = this.geometry[r.id].path;
+            for (let i = 0; i < pts.length; i += 2) if (Math.hypot(pts[i].x - x, pts[i].y - y) < gap) return true;
+            return false;
+        });
+        const lonLat = (x, y) => ({ east: x > 640, north: y < 175, south: y > 360 });
         const placed = [];
-        for (let tries = 0; tries < 900 && placed.length < 70; tries++) {
-            const x = 30 + this.rand() * (BOARD_W - 60), y = 30 + this.rand() * (BOARD_H - 60);
+        for (let tries = 0; tries < 2500 && placed.length < 120; tries++) {
+            const x = 20 + this.rand() * (BOARD_W - 40), y = 20 + this.rand() * (BOARD_H - 40);
             if (!this.insideLand(x, y)) continue;
-            if (segs.some(([a, b]) => distSeg(x, y, a, b) < 17)) continue;
-            if (MAP.cities.some(c => Math.hypot(c.x - x, c.y - y) < 46)) continue;
-            if (placed.some(p => Math.hypot(p[0] - x, p[1] - y) < 16)) continue;
-            placed.push([x, y]);
+            if (MAP.cities.some(c => Math.hypot(c.x - x, c.y - y) < 34)) continue;
+            if (placed.some(p => Math.hypot(p.x - x, p.y - y) < 15)) continue;
+            if (near(x, y, 13)) continue;
+            const z = lonLat(x, y);
+            const kind = z.east || (z.south && x > 220 && x < 620) ? (this.rand() < 0.8 ? 'peak' : 'tree')
+                : z.north ? (this.rand() < 0.85 ? 'tree' : 'peak') : (this.rand() < 0.35 ? 'tree' : 'field');
+            placed.push({ x, y, kind });
         }
-        placed.forEach(([x, y], i) => {
-            if (i % 4 === 0) {
-                // little hill
-                const g = svg('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, class: 'hill' }, this.decorLayer);
-                svg('path', { d: 'M-11,5 L-2,-8 L3,-2 L6,-6 L12,5 Z', fill: '#a3b18a' }, g);
-                svg('path', { d: 'M-2,-8 L1,-4 L-1,-3 L-4,-5 Z', fill: '#f8fafc' }, g);
-            } else {
-                const g = svg('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, class: 'tree' }, this.decorLayer);
+        placed.sort((a, b) => a.y - b.y).forEach(({ x, y, kind }) => {
+            const g = svg('g', { transform: `translate(${x.toFixed(1)},${y.toFixed(1)})`, class: kind }, this.decorLayer);
+            if (kind === 'peak') {
+                const s = 0.8 + this.rand() * 0.5;
+                svg('path', { d: `M${-12 * s},${5} L${-1 * s},${-11 * s} L${4 * s},${-4 * s} L${7 * s},${-8 * s} L${13 * s},${5} Z`, fill: '#a8a07e' }, g);
+                svg('path', { d: `M${-1 * s},${-11 * s} L${4 * s},${-4 * s} L${1 * s},${5} L${-4 * s},${5} Z`, fill: 'rgba(0,0,0,0.12)' }, g);
+                svg('path', { d: `M${-1 * s},${-11 * s} L${2 * s},${-6.5 * s} L${-0.5 * s},${-5.5 * s} L${-4 * s},${-7 * s} Z`, fill: '#f8fafc' }, g);
+            } else if (kind === 'tree') {
                 svg('ellipse', { cx: 0, cy: 6, rx: 6, ry: 2, fill: 'rgba(30,60,30,0.18)' }, g);
-                svg('path', { d: 'M0,-9 L6,3 L-6,3 Z', fill: i % 3 ? '#6aa84f' : '#4f8f3a' }, g);
+                svg('path', { d: 'M0,-9 L6,3 L-6,3 Z', fill: this.rand() < 0.5 ? '#5e9c45' : '#4f8f3a' }, g);
                 svg('rect', { x: -1, y: 3, width: 2, height: 3, fill: '#7c5a3a' }, g);
+            } else {
+                // a little wheat field
+                svg('path', { d: 'M-8,4 L-5,-3 M-3,4 L0,-3 M2,4 L5,-3', stroke: '#c9a227', 'stroke-width': 1.6, 'stroke-linecap': 'round', opacity: 0.7 }, g);
             }
         });
     }
 
     // ---------- Tracks ----------
 
-    buildRoute(r) {
+    // Gently curved centre line: same bend for both tracks of a double route
+    routeCurve(r) {
         const A = this.cities[r.a], B = this.cities[r.b];
         const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy);
-        const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+        const nx = -dy / len, ny = dx / len;
+        let h = 0;
+        for (const ch of r.a + r.b) h = (h * 31 + ch.charCodeAt(0)) % 997;
+        const bend = (h % 2 ? 1 : -1) * Math.min(len * 0.07, 9);
+        const cx = (A.x + B.x) / 2 + nx * bend, cy = (A.y + B.y) / 2 + ny * bend;
         const off = r.lane === 0 ? -LANE_OFFSET : r.lane === 1 ? LANE_OFFSET : 0;
-        const usable = len - CITY_GAP * 2;
+        const pts = [];
+        const N = 48;
+        for (let i = 0; i <= N; i++) {
+            const t = i / N, u = 1 - t;
+            const x = u * u * A.x + 2 * u * t * cx + t * t * B.x;
+            const y = u * u * A.y + 2 * u * t * cy + t * t * B.y;
+            // tangent, for the lane offset
+            const tx = 2 * u * (cx - A.x) + 2 * t * (B.x - cx);
+            const ty = 2 * u * (cy - A.y) + 2 * t * (B.y - cy);
+            const tl = Math.hypot(tx, ty) || 1;
+            pts.push({ x: x - ty / tl * off, y: y + tx / tl * off });
+        }
+        let acc = 0;
+        pts.forEach((p, i) => { if (i) acc += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y); p.d = acc; });
+        return pts;
+    }
+
+    pointAt(pts, d) {
+        let i = 1;
+        while (i < pts.length - 1 && pts[i].d < d) i++;
+        const a = pts[i - 1], b = pts[i];
+        const t = (d - a.d) / ((b.d - a.d) || 1);
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, angle: Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI };
+    }
+
+    buildRoute(r) {
+        const pts = this.routeCurve(r);
+        const total = pts[pts.length - 1].d;
+        const usable = total - CITY_GAP * 2;
         const gap = 2.6;
         const w = (usable - gap * (r.length - 1)) / r.length;
-        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
 
         const slots = [];
-        for (let i = 0; i < r.length; i++) {
-            const along = CITY_GAP + i * (w + gap) + w / 2;
-            slots.push({ x: A.x + ux * along + nx * off, y: A.y + uy * along + ny * off });
-        }
-        this.geometry[r.id] = {
-            slots, w, angle,
-            mid: { x: (A.x + B.x) / 2 + nx * off, y: (A.y + B.y) / 2 + ny * off }
-        };
+        for (let i = 0; i < r.length; i++) slots.push(this.pointAt(pts, CITY_GAP + i * (w + gap) + w / 2));
+        this.geometry[r.id] = { slots, w, path: pts, mid: this.pointAt(pts, total / 2) };
 
-        const g = svg('g', { class: `route color-${r.color}`, 'data-id': r.id }, this.routeLayer);
+        const g = svg('g', { class: `route color-${r.color}${r.tunnel ? ' tunnel' : ''}${r.ferry ? ' ferry' : ''}`, 'data-id': r.id }, this.routeLayer);
         // wide invisible line makes the whole route easy to click or tap
-        svg('line', {
-            x1: A.x + nx * off, y1: A.y + ny * off, x2: B.x + nx * off, y2: B.y + ny * off,
-            class: 'route-hit', 'stroke-width': 18
-        }, g);
+        svg('polyline', { points: pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '), class: 'route-hit', 'stroke-width': 18, fill: 'none' }, g);
         const style = CARD_STYLE[r.color];
-        slots.forEach(p => {
-            const sg = svg('g', { transform: `translate(${p.x.toFixed(2)},${p.y.toFixed(2)}) rotate(${angle.toFixed(2)})` }, g);
+        slots.forEach((p, i) => {
+            const sg = svg('g', { transform: `translate(${p.x.toFixed(2)},${p.y.toFixed(2)}) rotate(${p.angle.toFixed(2)})` }, g);
+            if (r.tunnel) {
+                // tunnels: dark dashed frame around each car space
+                svg('rect', { x: -w / 2 - 2.2, y: -SLOT_H / 2 - 2.2, width: w + 4.4, height: SLOT_H + 4.4, rx: 3.6, class: 'tunnel-frame' }, sg);
+            }
             svg('rect', {
                 x: -w / 2, y: -SLOT_H / 2, width: w, height: SLOT_H, rx: 2.6,
                 class: 'slot', fill: style.fill, stroke: style.dark, 'stroke-width': 1.3
             }, sg);
             svg('rect', { x: -w / 2 + 2, y: -SLOT_H / 2 + 1.6, width: Math.max(1, w - 4), height: 2, rx: 1, fill: 'rgba(255,255,255,0.35)', class: 'slot-shine' }, sg);
+            if (i < (r.ferry || 0)) {
+                // ferries: this space needs a wild (locomotive) card
+                svg('circle', { r: 3.6, fill: 'url(#loco-grad)', stroke: '#fff', 'stroke-width': 1.2, class: 'ferry-mark' }, sg);
+            }
         });
 
         g.addEventListener('click', () => this.handlers.onRouteClick && this.handlers.onRouteClick(r.id));
@@ -245,6 +268,21 @@ class RailBoard {
         });
     }
 
+    // Rival routes my stations are using: a dashed line in my colour
+    markBorrowed(ids, color) {
+        const key = `${ids.join(',')}|${color}`;
+        if (key === this.borrowKey) return;
+        this.borrowKey = key;
+        this.borrowLayer.innerHTML = '';
+        ids.forEach(id => {
+            const pts = this.geometry[id].path;
+            svg('polyline', {
+                points: pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+                fill: 'none', stroke: color, class: 'borrow-line'
+            }, this.borrowLayer);
+        });
+    }
+
     markStationable(ids) {
         const set = new Set(ids);
         Object.entries(this.cityEls).forEach(([id, el]) => el.classList.toggle('can-station', set.has(id)));
@@ -292,7 +330,7 @@ class RailBoard {
         const w = geo.w;
         geo.slots.forEach((p, i) => {
             const outer = svg('g', {
-                transform: `translate(${p.x.toFixed(2)},${p.y.toFixed(2)}) rotate(${geo.angle.toFixed(2)})`,
+                transform: `translate(${p.x.toFixed(2)},${p.y.toFixed(2)}) rotate(${p.angle.toFixed(2)})`,
                 'data-route': r.id
             }, this.trainLayer);
             const car = svg('g', { class: animate ? 'train drop' : 'train', style: `animation-delay:${i * 90}ms` }, outer);

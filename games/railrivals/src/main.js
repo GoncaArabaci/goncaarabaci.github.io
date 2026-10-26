@@ -29,6 +29,9 @@ class RailApp {
             this.ui.open('invite');
         });
         $('btn-start').addEventListener('click', () => this.startGame());
+        $('btn-end-game').addEventListener('click', () => {
+            if (window.confirm('End the game now and count the scores?')) this.dispatch('end_game');
+        });
         $('btn-again').addEventListener('click', () => this.startGame());
 
         const go = () => {
@@ -240,6 +243,9 @@ class RailApp {
             case 'tickets': ok = g.drawTickets(seat); break;
             case 'pass': ok = g.pass(seat); break;
             case 'keep_tickets': ok = Array.isArray(data.ids) && g.keepTickets(seat, data.ids.map(Number).filter(Number.isInteger)); break;
+            case 'tunnel_pay': ok = g.payTunnel(seat, data.payment || {}); break;
+            case 'tunnel_give_up': ok = g.abandonTunnel(seat); break;
+            case 'end_game': ok = seat === 0 && g.endNow(); break;
             case 'station': ok = typeof data.cityId === 'string' && g.buildStation(seat, data.cityId, data.payment || {}); break;
             case 'claim': {
                 const routeId = Math.floor(Number(data.routeId));
@@ -310,6 +316,8 @@ class RailApp {
             this.ui.confettiDone = false;
         }
         this.ui.update(view, seat, fresh);
+        // only the host can stop a game that got stuck
+        $('btn-end-game').hidden = !(this.net.isHost && view.phase !== 'GAME_OVER' && view.phase !== 'SETUP_TICKETS');
     }
 
     // Tell the player why joining failed, so they know what to try

@@ -196,6 +196,8 @@ class RailUI {
         this.renderLog();
         this.renderClaimable();
         this.renderTicketChoice(false);
+        this.renderTunnel(act);
+        this.renderStationUse();
 
         $('final-banner').hidden = game.turnsLeft === null || game.phase === 'GAME_OVER';
 
@@ -215,6 +217,11 @@ class RailUI {
     }
 
     playEffects(act, prev) {
+        if (act.type === 'tunnel_fail') {
+            const who = this.game.players[act.player].name;
+            this.toast(act.player === this.mySeat ? '⛰️ You kept your cards' : `⛰️ ${who} gave up the tunnel`);
+            sound.error();
+        }
         if (act.type === 'claim') {
             const r = MAP.routes[act.routeId];
             this.board.floatText(act.routeId, `+${act.points}`, PLAYER_STYLE[act.player].light);
@@ -497,6 +504,8 @@ class RailUI {
         const owner = g.owner[id];
         const color = CARD_STYLE[r.color].name;
         let line = `<b>${esc(g.cities[r.a].name)} – ${esc(g.cities[r.b].name)}</b><br>${r.length} car${r.length > 1 ? 's' : ''} · ${color} · +${ROUTE_POINTS[r.length]} pts`;
+        if (r.tunnel) line += '<br>⛰️ Tunnel: 3 cards are turned over, matches cost extra';
+        if (r.ferry) line += `<br>⛴️ Ferry: needs ${r.ferry} wild card${r.ferry > 1 ? 's' : ''}`;
         if (owner !== undefined) line += `<br>Owned by ${esc(g.players[owner].name)}`;
         else if (this.mySeat !== null && g.phase !== 'SETUP_TICKETS') {
             const why = g.routeBlocked(this.mySeat, id);
@@ -557,14 +566,16 @@ class RailUI {
         const options = why ? [] : g.paymentOptions(this.mySeat, id);
         const r = MAP.routes[id];
 
-        if (!why && options.length === 1) {
+        if (!why && options.length === 1 && !r.tunnel) {
             // one way to pay: claim right away
             this.claim(id, options[0]);
             return;
         }
         this.board.selectRoute(id);
         $('claim-title').textContent = `${g.cities[r.a].name} – ${g.cities[r.b].name}`;
-        $('claim-meta').innerHTML = `${r.length} car${r.length > 1 ? 's' : ''} · ${esc(CARD_STYLE[r.color].name)} · <b>+${ROUTE_POINTS[r.length]} pts</b>`;
+        $('claim-meta').innerHTML = `${r.length} car${r.length > 1 ? 's' : ''} · ${esc(CARD_STYLE[r.color].name)} · <b>+${ROUTE_POINTS[r.length]} pts</b>` +
+            (r.tunnel ? '<br>⛰️ <b>Tunnel:</b> after you pay, 3 cards are turned over. Each match costs one more card; you can still back out then.' : '') +
+            (r.ferry ? `<br>⛴️ <b>Ferry:</b> ${r.ferry} of the cards must be wild.` : '');
         if (why || !options.length) {
             $('claim-options').innerHTML = `<div class="claim-warn">${esc(why || this.needText(r))}</div>`;
             sound.error();
@@ -595,6 +606,80 @@ class RailUI {
     closeClaim() {
         $('claim').hidden = true;
         this.board.selectRoute(null);
+    }
+
+    // ---------- Tunnels ----------
+
+    renderTunnel(act) {
+        const g = this.game;
+        const t = g.phase === 'TUNNEL' ? g.tunnel : null;
+        // a tunnel that needed nothing extra: show the lucky draw briefly
+        const lucky = act && act.type === 'claim' && act.revealed && act.revealed.length && !act.extra;
+        if (!t && !lucky) {
+            if (!this.tunnelHold) this.close('tunnel');
+            return;
+        }
+        const info = t || { routeId: act.routeId, revealed: act.revealed, extra: 0 };
+        const r = MAP.routes[info.routeId];
+        const who = g.players[g.turnIndex];
+        const mine = t && g.turnIndex === this.mySeat;
+        const key = `${info.routeId}:${info.revealed.join(',')}:${info.extra}:${g.phase}`;
+        if (key === this.tunnelKey && $('tunnel').classList.contains('show')) return;
+        this.tunnelKey = key;
+
+        $('tunnel-title').textContent = `${g.cities[r.a].name} – ${g.cities[r.b].name}`;
+        $('tunnel-sub').textContent = mine ? 'Three cards were turned over from the deck:'
+            : `${(lucky ? g.players[act.player] : who).name} is digging a tunnel. Turned over:`;
+        $('tunnel-cards').innerHTML = info.revealed.map((c, i) =>
+            this.cardHTML(c, 'flip', `style="animation-delay:${i * 220}ms" tabindex="-1"`)).join('');
+        $('tunnel-need').innerHTML = info.extra
+            ? `Needs <b>${info.extra} more card${info.extra > 1 ? 's' : ''}</b>${info.revealed.length < 3 ? ' (the deck ran short)' : ''}`
+            : '✅ No extra cards needed!';
+
+        if (mine) {
+            const opts = g.tunnelOptions(this.mySeat);
+            $('tunnel-options').innerHTML = opts.map((o, i) => this.payButton(o, i, 'Pay →')).join('') +
+                `<button type="button" class="ghost-btn" id="tunnel-give-up">${opts.length ? 'Give up, keep my cards' : 'Not enough cards — keep my cards'}</button>`;
+            $('tunnel-options').querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => {
+                this.onAction('tunnel_pay', { payment: opts[Number(b.dataset.opt)] });
+            }));
+            $('tunnel-give-up').addEventListener('click', () => this.onAction('tunnel_give_up'));
+        } else {
+            $('tunnel-options').innerHTML = t ? `<p class="muted">Waiting for ${esc(who.name)} to decide…</p>` : '';
+        }
+        this.open('tunnel');
+        sound.card();
+        if (lucky) {
+            this.tunnelHold = true;
+            clearTimeout(this.tunnelTimer);
+            this.tunnelTimer = setTimeout(() => { this.tunnelHold = false; this.close('tunnel'); }, 2200);
+        }
+    }
+
+    // ---------- Station use ----------
+
+    // Which rival route each of my stations is using right now
+    renderStationUse() {
+        const g = this.game;
+        const me = this.me;
+        const note = $('my-stations-note');
+        if (!me || !me.tickets || g.phase === 'SETUP_TICKETS') {
+            note.innerHTML = '';
+            this.board.markBorrowed([], null);
+            return;
+        }
+        const mine = Object.keys(g.stationsAt).filter(c => g.stationsAt[c] === me.id);
+        const use = g.bestStationUse(me.id);
+        this.board.markBorrowed(use.borrowed, PLAYER_STYLE[me.id].fill);
+        if (!mine.length) { note.innerHTML = ''; return; }
+        note.innerHTML = mine.map(cid => {
+            const rid = use.borrowed.find(id => MAP.routes[id].a === cid || MAP.routes[id].b === cid);
+            const city = g.cities[cid].name;
+            if (rid === undefined) return `<div>🚉 <b>${esc(city)}</b>: not needed yet</div>`;
+            const r = MAP.routes[rid];
+            const other = g.cities[r.a === cid ? r.b : r.a].name;
+            return `<div>🚉 <b>${esc(city)}</b> uses ${esc(city)} – ${esc(other)} <span class="muted">(${esc(g.players[g.owner[rid]].name)})</span></div>`;
+        }).join('') + '<div class="muted small">Each station can use one rival route.</div>';
     }
 
     // ---------- Flying cards ----------

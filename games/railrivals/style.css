@@ -165,7 +165,12 @@ button:disabled { cursor: not-allowed; }
 .hint { text-transform: none; letter-spacing: 0; color: var(--accent); font-weight: 600; }
 
 /* ---------- Board ---------- */
-.shore-glow { fill: none; stroke: rgba(186, 230, 253, 0.18); stroke-width: 22; stroke-linejoin: round; }
+.shore-glow { fill: none; stroke: rgba(186, 230, 253, 0.16); stroke-width: 14; stroke-linejoin: round; }
+.land { stroke: #f5f0d8; stroke-width: 2.2; stroke-linejoin: round; }
+.neighbours { fill: #b9b39a; opacity: 0.32; stroke: rgba(255, 255, 255, 0.35); stroke-width: 0.8; stroke-linejoin: round; }
+.lake { fill: #1d6f92; stroke: #e0f2fe; stroke-width: 1.4; stroke-linejoin: round; }
+.tunnel-frame { fill: none; stroke: #1e293b; stroke-width: 2; stroke-dasharray: 3 2; }
+.ferry-mark { pointer-events: none; }
 .sea-label { font-size: 15px; font-weight: 600; font-style: italic; letter-spacing: 0.35em; fill: rgba(224, 242, 254, 0.45); pointer-events: none; }
 
 .route { cursor: default; }
@@ -679,7 +684,7 @@ button:disabled { cursor: not-allowed; }
         padding: 8px;
         gap: 8px;
     }
-    #board-wrap { aspect-ratio: 1000 / 560; }
+    #board-wrap { aspect-ratio: 1000 / 540; }
     #topbar { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
     .turn-pill { order: 3; flex-basis: 100%; font-size: 14px; justify-content: flex-start; }
     .turn-pill #turn-text { white-space: normal; }
@@ -706,3 +711,26 @@ button:disabled { cursor: not-allowed; }
 @keyframes station-spin { to { transform: rotate(360deg); } }
 .station-piece { transform-box: fill-box; transform-origin: center bottom; filter: drop-shadow(0 1.5px 1px rgba(15, 23, 42, 0.5)); }
 .station-piece.drop { animation: drop 0.6s var(--spring) both; }
+
+/* ---------- Tunnels ---------- */
+.tunnel-sheet { text-align: center; width: min(460px, 100%); }
+.tunnel-icon { font-size: 44px; animation: crown 0.6s var(--spring) both; }
+.tunnel-cards { display: flex; gap: 14px; justify-content: center; margin: 18px 0 10px; perspective: 600px; }
+.tunnel-cards .tcard { width: 70px; height: 100px; }
+.tcard.flip { animation: card-flip 0.6s var(--spring) both; }
+@keyframes card-flip {
+    0% { transform: rotateY(180deg) scale(0.7); filter: brightness(0.2); opacity: 0; }
+    60% { opacity: 1; }
+    100% { transform: none; filter: none; }
+}
+.tunnel-need { font-size: 16px; margin: 6px 0 12px; }
+.tunnel-need b { color: var(--accent); }
+
+/* ---------- Station use ---------- */
+.borrow-line { stroke-width: 4; stroke-dasharray: 2 5; stroke-linecap: round; opacity: 0.95; pointer-events: none; animation: borrow-move 1.2s linear infinite; }
+@keyframes borrow-move { to { stroke-dashoffset: -14; } }
+.stations-note { font-size: 12px; line-height: 1.5; min-width: 180px; padding-left: 14px; border-left: 1px dashed rgba(148, 163, 184, 0.35); align-self: center; }
+.stations-note:empty { display: none; }
+.small { font-size: 11px; }
+
+.chip-btn.danger { border-color: rgba(239, 68, 68, 0.5); color: #fecaca; }

@@ -27,6 +27,7 @@
                 <button id="btn-invite" class="chip-btn" type="button">🔗 Invite</button>
                 <button id="btn-sound" class="chip-btn icon-only" type="button" aria-label="Sound">🔊</button>
                 <button id="btn-rules" class="chip-btn" type="button">📖 Rules</button>
+                <button id="btn-end-game" class="chip-btn danger" type="button" hidden>🏁 End game</button>
             </div>
         </header>
 
@@ -76,6 +77,7 @@
                 <div class="tray-body">
                     <div id="hand" class="hand"></div>
                     <div id="my-tickets" class="my-tickets"></div>
+                    <div id="my-stations-note" class="stations-note"></div>
                 </div>
             </section>
         </main>
@@ -145,6 +147,18 @@
         <div id="claim-options" class="claim-options"></div>
     </div>
 
+    <!-- Tunnel: the three turned-over cards -->
+    <div id="tunnel" class="overlay">
+        <div class="sheet tunnel-sheet">
+            <div class="tunnel-icon" aria-hidden="true">⛰️</div>
+            <h3 id="tunnel-title">Digging a tunnel…</h3>
+            <p id="tunnel-sub" class="muted"></p>
+            <div id="tunnel-cards" class="tunnel-cards"></div>
+            <p id="tunnel-need" class="tunnel-need"></p>
+            <div id="tunnel-options" class="claim-options"></div>
+        </div>
+    </div>
+
     <!-- Rules -->
     <div id="rules" class="overlay">
         <div class="sheet rules-sheet">
@@ -160,11 +174,13 @@
                     </ul>
                 </li>
                 <li><b>Stations 🚉:</b> each of your stations lets you use one rival route out of its city to finish your tickets (picked for you at the end, the best choice). Every station you never build is worth +4.</li>
+                <li><b>Tunnels ⛰️</b> (dashed frame): after you pay, 3 cards are turned over from the deck. Each one in your colour, and every wild, costs one more card of that colour or a wild. If you can't or don't want to pay, you take your cards back and your turn ends.</li>
+                <li><b>Ferries ⛴️</b> (rainbow dots): each dot must be paid with a wild card.</li>
                 <li><b>Route points:</b> 1 car = 1, 2 = 2, 3 = 4, 4 = 7, 5 = 10, 6 = 15.</li>
                 <li><b>Tickets:</b> connect the two cities with your own trains to add the points at the end. Unfinished tickets subtract them.</li>
                 <li><b>Double routes:</b> with 2–3 players only one of the two tracks can be used. Nobody can own both.</li>
                 <li><b>Longest line:</b> +10 for the longest continuous line.</li>
-                <li><b>The end:</b> when someone has 2 or fewer trains left, everyone gets one last turn.</li>
+                <li><b>The end:</b> when someone has 2 or fewer trains left, everyone gets one last turn. The game also ends when no one can claim any route any more. If the deck runs out, the discards are shuffled into a new one.</li>
             </ul>
             <button class="big-btn close-btn" type="button" data-close="rules">Let's go</button>
         </div>

@@ -31,6 +31,7 @@ class RailGame {
         this.turnIndex = 0;
         this.phase = 'SETUP_TICKETS'; // SETUP_TICKETS | TURN | CHOOSE_TICKETS | GAME_OVER
         this.drawnThisTurn = 0;
+        this.tunnel = null;           // a tunnel waiting for extra cards
         this.turnsLeft = null;        // set when the final round starts
         this.final = null;            // end-of-game scores
         this.logs = [];
@@ -178,11 +179,11 @@ class RailGame {
                 }
             }
         });
-        // only wilds: list it once
+        // only wilds: list it once; ferries need their wild cards
         const seen = new Set();
         return options.filter(o => {
             const key = o.colorCount === 0 ? 'wild' : `${o.color}:${o.colorCount}`;
-            if (seen.has(key)) return false;
+            if (seen.has(key) || o.locos < (route.ferry || 0)) return false;
             seen.add(key);
             return true;
         });
@@ -199,22 +200,120 @@ class RailGame {
         const locos = Math.floor(Number(payment && payment.locos) || 0);
         if (!CARD_COLORS.includes(color) || colorCount < 0 || locos < 0) return false;
         if (colorCount + locos !== route.length) return false;
+        if (locos < (route.ferry || 0)) return false;
         if (route.color !== 'grey' && colorCount > 0 && color !== route.color) return false;
         if (p.hand[color] < colorCount || p.hand[LOCO] < locos) return false;
 
         p.hand[color] -= colorCount;
         p.hand[LOCO] -= locos;
-        for (let i = 0; i < colorCount; i++) this.discard.push(color);
-        for (let i = 0; i < locos; i++) this.discard.push(LOCO);
+        const paid = [...Array(colorCount).fill(color), ...Array(locos).fill(LOCO)];
 
+        if (!route.tunnel) {
+            this.completeClaim(routeId, paid);
+            return true;
+        }
+
+        // Tunnel: turn over the top 3 cards. Each one matching the colour used
+        // (wilds always match) costs one more card of that colour or a wild.
+        // If only wilds were played, only revealed wilds count.
+        const revealed = [];
+        for (let i = 0; i < 3; i++) {
+            const c = this.drawCard();
+            if (c) revealed.push(c);
+        }
+        const extra = revealed.filter(c => c === LOCO || (colorCount > 0 && c === color)).length;
+        this.tunnel = { routeId, paid, revealed, extra, color: colorCount > 0 ? color : null };
+        this.passesInARow = 0;
+        this.log(`⛰️ ${p.name} tries the tunnel ${this.cities[route.a].name} – ${this.cities[route.b].name}: ${extra ? `${extra} more card${extra > 1 ? 's' : ''} needed` : 'no extra cards!'}`);
+        if (extra === 0) {
+            this.discard.push(...revealed);
+            this.tunnel = null;
+            this.completeClaim(routeId, paid, { revealed, extra: 0 });
+        } else {
+            this.phase = 'TUNNEL';
+            this.lastAction = { type: 'tunnel_reveal', player: p.id, routeId, revealed, extra };
+        }
+        return true;
+    }
+
+    completeClaim(routeId, paid, tunnelInfo = null) {
+        const route = this.routes[routeId];
+        const p = this.current;
+        this.discard.push(...paid);
         this.owner[routeId] = p.id;
         p.trains -= route.length;
         const pts = ROUTE_POINTS[route.length];
         p.routePoints += pts;
         this.passesInARow = 0;
-        this.lastAction = { type: 'claim', player: p.id, routeId, points: pts };
+        this.lastAction = { type: 'claim', player: p.id, routeId, points: pts, ...(tunnelInfo || {}) };
         this.log(`🚂 ${p.name} claimed ${this.cities[route.a].name} – ${this.cities[route.b].name} (+${pts}).`);
         this.endTurn();
+    }
+
+    // Ways to pay the extra tunnel cards from what's left in hand
+    tunnelOptions(playerId) {
+        const t = this.tunnel;
+        if (!t || playerId !== this.turnIndex) return [];
+        const hand = this.players[playerId].hand;
+        const out = [];
+        if (t.color) {
+            for (let use = Math.min(hand[t.color], t.extra); use >= 0; use--) {
+                if (t.extra - use <= hand[LOCO]) out.push({ color: t.color, colorCount: use, locos: t.extra - use });
+            }
+        } else if (hand[LOCO] >= t.extra) {
+            out.push({ color: CARD_COLORS[0], colorCount: 0, locos: t.extra });
+        }
+        return out;
+    }
+
+    payTunnel(playerId, payment) {
+        const t = this.tunnel;
+        if (this.phase !== 'TUNNEL' || !t || playerId !== this.turnIndex) return false;
+        const p = this.current;
+        const colorCount = Math.floor(Number(payment && payment.colorCount) || 0);
+        const locos = Math.floor(Number(payment && payment.locos) || 0);
+        if (colorCount < 0 || locos < 0 || colorCount + locos !== t.extra) return false;
+        if (colorCount > 0 && (!t.color || p.hand[t.color] < colorCount)) return false;
+        if (p.hand[LOCO] < locos) return false;
+        if (colorCount) p.hand[t.color] -= colorCount;
+        p.hand[LOCO] -= locos;
+        const paid = [...t.paid, ...Array(colorCount).fill(t.color), ...Array(locos).fill(LOCO)];
+        this.discard.push(...t.revealed);
+        const info = { revealed: t.revealed, extra: t.extra };
+        this.tunnel = null;
+        this.phase = 'TURN';
+        this.completeClaim(t.routeId, paid, info);
+        return true;
+    }
+
+    // Can't or won't pay: take the cards back, the turn is over
+    abandonTunnel(playerId) {
+        const t = this.tunnel;
+        if (this.phase !== 'TUNNEL' || !t || playerId !== this.turnIndex) return false;
+        const p = this.current;
+        t.paid.forEach(c => { p.hand[c]++; });
+        this.discard.push(...t.revealed);
+        this.tunnel = null;
+        this.phase = 'TURN';
+        this.lastAction = { type: 'tunnel_fail', player: p.id, routeId: t.routeId };
+        this.log(`⛰️ ${p.name} gave up the tunnel and kept their cards.`);
+        this.endTurn();
+        return true;
+    }
+
+    // Can anyone still claim any route? (cards aside)
+    anyRouteLeft() {
+        return this.routes.some(r => this.owner[r.id] === undefined &&
+            this.players.some(p => !this.routeBlocked(p.id, r.id)));
+    }
+
+    // The host can end a game that has stalled
+    endNow() {
+        if (this.phase === 'GAME_OVER' || this.phase === 'SETUP_TICKETS') return false;
+        if (this.tunnel) this.abandonTunnel(this.turnIndex);
+        if (this.phase === 'GAME_OVER') return true;
+        this.log('🏁 The host ended the game.');
+        this.finishGame();
         return true;
     }
 
@@ -299,8 +398,9 @@ class RailGame {
         const returned = p.pendingTickets.filter(id => !keep.includes(id));
         p.tickets.push(...keep);
         p.pendingTickets = [];
-        // returned tickets go under the pile; long ones leave the game
-        returned.filter(id => !this.ticketInfo[id].long).forEach(id => this.ticketDeck.unshift(id));
+        // At the start, unwanted tickets leave the game (as in the rulebook);
+        // later they go under the pile. Long tickets always leave.
+        if (!setup) returned.filter(id => !this.ticketInfo[id].long).forEach(id => this.ticketDeck.unshift(id));
         this.lastAction = { type: 'tickets_kept', player: p.id, count: keep.length };
         this.log(`🎫 ${p.name} kept ${keep.length} ticket${keep.length > 1 ? 's' : ''}.`);
 
@@ -334,6 +434,13 @@ class RailGame {
             this.turnsLeft = this.players.length;
             this.log(`⏰ ${p.name} has ${p.trains} train${p.trains === 1 ? '' : 's'} left: everyone gets one last turn!`);
             this.lastAction = { ...(this.lastAction || {}), finalRound: true };
+        }
+
+        // Nobody can claim a single route any more: nothing left to play for
+        if (!this.anyRouteLeft()) {
+            this.log('🛤️ No routes are left that anyone can claim, so the game ends.');
+            this.finishGame();
+            return;
         }
 
         this.phase = 'TURN';
@@ -378,6 +485,7 @@ class RailGame {
     skipTurn(playerId) {
         if (playerId !== this.turnIndex || this.phase === 'GAME_OVER') return false;
         if (this.phase === 'CHOOSE_TICKETS') return this.autoKeepTickets(playerId);
+        if (this.phase === 'TUNNEL') return this.abandonTunnel(playerId);
         this.log(`⏭️ ${this.current.name} is away, so their turn was skipped.`);
         this.lastAction = { type: 'skip', player: playerId };
         this.endTurn();
@@ -514,6 +622,7 @@ class RailGame {
             ticketDeckCount: this.ticketDeck.length,
             turnIndex: this.turnIndex,
             phase: this.phase,
+            tunnel: this.tunnel ? { routeId: this.tunnel.routeId, revealed: [...this.tunnel.revealed], extra: this.tunnel.extra, color: this.tunnel.color } : null,
             drawnThisTurn: this.drawnThisTurn,
             turnsLeft: this.turnsLeft,
             final: this.final,
@@ -561,7 +670,14 @@ class RailGame {
         g.discard = new Array(Math.min(200, int(s.discardCount))).fill(null);
         g.ticketDeck = new Array(Math.min(60, int(s.ticketDeckCount))).fill(null);
         g.turnIndex = Math.min(int(s.turnIndex), Math.max(0, g.players.length - 1));
-        g.phase = ['SETUP_TICKETS', 'TURN', 'CHOOSE_TICKETS', 'GAME_OVER'].includes(s.phase) ? s.phase : 'TURN';
+        g.phase = ['SETUP_TICKETS', 'TURN', 'CHOOSE_TICKETS', 'TUNNEL', 'GAME_OVER'].includes(s.phase) ? s.phase : 'TURN';
+        g.tunnel = s.tunnel && g.routes[s.tunnel.routeId] ? {
+            routeId: int(s.tunnel.routeId),
+            revealed: (s.tunnel.revealed || []).slice(0, 3).filter(c => c === LOCO || CARD_COLORS.includes(c)),
+            extra: Math.min(3, int(s.tunnel.extra)),
+            color: CARD_COLORS.includes(s.tunnel.color) ? s.tunnel.color : null,
+            paid: []
+        } : null;
         g.drawnThisTurn = int(s.drawnThisTurn);
         g.turnsLeft = s.turnsLeft === null ? null : int(s.turnsLeft);
         g.final = Array.isArray(s.final) ? s.final.map(f => ({
@@ -581,6 +697,8 @@ class RailGame {
             routeId: int(s.lastAction.routeId),
             city: g.cities[s.lastAction.city] ? s.lastAction.city : null,
             points: int(s.lastAction.points),
+            revealed: (s.lastAction.revealed || []).slice(0, 3).filter(c => c === LOCO || CARD_COLORS.includes(c)),
+            extra: int(s.lastAction.extra),
             count: int(s.lastAction.count),
             finalRound: !!s.lastAction.finalRound
         } : null;
