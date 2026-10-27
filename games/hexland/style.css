@@ -951,3 +951,16 @@ body.is-dragging * { cursor: grabbing !important; }
     transform: translateY(-6px);
     box-shadow: 3px 3px 0 #000, 0 0 0 3px #2ecc71;
 }
+
+/* Pixel icons that replace emoji everywhere in the UI */
+.px-icon {
+    display: inline-block;
+    height: 1.5em;
+    width: auto;
+    vertical-align: -0.35em;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+.pixel-btn .px-icon, .header-btn .px-icon { height: 1.6em; margin-right: 2px; }
+.section-title .px-icon, .hand-title .px-icon { height: 1.7em; }
+.log-entry .px-icon { height: 1.6em; }

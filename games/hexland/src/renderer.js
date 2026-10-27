@@ -130,6 +130,7 @@ class HexlandRenderer {
 
     drawHarbors() {
         const ctx = this.ctx;
+        const SCALE = 2;
 
         this.board.harbors.forEach(h => {
             const v1 = this.board.vertices[h.v1];
@@ -139,36 +140,20 @@ class HexlandRenderer {
             const midX = (p1.x + p2.x) / 2;
             const midY = (p1.y + p2.y) / 2;
 
-            // Vector away from center
+            // out to sea, away from the island's centre
             const dirX = midX - this.centerX;
             const dirY = midY - this.centerY;
             const len = Math.hypot(dirX, dirY) || 1;
-            const pierLen = 32;
-            const pierX = midX + (dirX / len) * pierLen;
-            const pierY = midY + (dirY / len) * pierLen;
+            const pierX = midX + (dirX / len) * 34;
+            const pierY = midY + (dirY / len) * 34;
 
-            // Wooden dock beams
-            ctx.strokeStyle = '#5a3818';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(p1.x, p1.y);
-            ctx.lineTo(pierX, pierY);
-            ctx.moveTo(p2.x, p2.y);
-            ctx.lineTo(pierX, pierY);
-            ctx.stroke();
+            // two wooden piers made of pixel planks
+            this.pixelLine(p1, { x: pierX, y: pierY }, PIXEL_PALETTE.b, PIXEL_PALETTE.k, 4);
+            this.pixelLine(p2, { x: pierX, y: pierY }, PIXEL_PALETTE.b, PIXEL_PALETTE.k, 4);
 
-            // Harbor badge
-            ctx.fillStyle = '#f1c40f';
-            ctx.strokeStyle = '#2c3e50';
-            ctx.lineWidth = 2;
-            ctx.fillRect(pierX - 22, pierY - 12, 44, 24);
-            ctx.strokeRect(pierX - 22, pierY - 12, 44, 24);
-
-            ctx.fillStyle = '#2c3e50';
-            ctx.font = 'bold 10px monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(h.label, pierX, pierY);
+            const sign = pixelSprites.harborSign(h.ratio === 3 ? '3:1' : '2:1', h.resource);
+            const w = sign.width * SCALE, hgt = sign.height * SCALE;
+            ctx.drawImage(sign, Math.round(pierX - w / 2), Math.round(pierY - hgt / 2), w, hgt);
         });
     }
 
@@ -226,36 +211,9 @@ class HexlandRenderer {
     }
 
     drawNumberToken(x, y, number, pips) {
-        const ctx = this.ctx;
-        const isRed = (number === 6 || number === 8);
-
-        // Circular token base (retro pixel aesthetic)
-        ctx.fillStyle = '#faebd7';
-        ctx.strokeStyle = '#3e2723';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(x, y, 16, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Number
-        ctx.fillStyle = isRed ? '#d32f2f' : '#263238';
-        ctx.font = `bold ${isRed ? 14 : 12}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(number.toString(), x, y - 3);
-
-        // Pip dots (representing probability)
-        const pipRadius = 1.5;
-        const pipSpacing = 4;
-        const startX = x - ((pips - 1) * pipSpacing) / 2;
-
-        ctx.fillStyle = isRed ? '#d32f2f' : '#37474f';
-        for (let i = 0; i < pips; i++) {
-            ctx.beginPath();
-            ctx.arc(startX + i * pipSpacing, y + 8, pipRadius, 0, Math.PI * 2);
-            ctx.fill();
-        }
+        const sprite = pixelSprites.token(number, pips);
+        const size = sprite.width * 2;
+        this.ctx.drawImage(sprite, Math.round(x - size / 2), Math.round(y - size / 2), size, size);
     }
 
     drawRobber() {
@@ -324,77 +282,17 @@ class HexlandRenderer {
 
     drawSettlement(x, y, color) {
         if (this.drawCustomPiece('settlement', x, y, color, 28)) return;
-        const ctx = this.ctx;
-        const size = 12;
-
-        ctx.save();
-        ctx.translate(x, y);
-
-        // Black pixel outline
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(-size / 2 - 2, -size / 2 - 2, size + 4, size + 4);
-        ctx.beginPath();
-        ctx.moveTo(0, -size - 3);
-        ctx.lineTo(-size / 2 - 3, -size / 2);
-        ctx.lineTo(size / 2 + 3, -size / 2);
-        ctx.fill();
-
-        // Roof (Player color)
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(0, -size - 1);
-        ctx.lineTo(-size / 2, -size / 2);
-        ctx.lineTo(size / 2, -size / 2);
-        ctx.closePath();
-        ctx.fill();
-
-        // Walls (Stone / Wood)
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(-size / 2, -size / 2, size, size);
-
-        // Door
-        ctx.fillStyle = '#451a03';
-        ctx.fillRect(-2, 2, 4, 4);
-
-        ctx.restore();
+        const sprite = pixelSprites.settlement(color);
+        const w = sprite.width * 2, h = sprite.height * 2;
+        // the house stands on the corner, a little above it
+        this.ctx.drawImage(sprite, Math.round(x - w / 2), Math.round(y - h * 0.62), w, h);
     }
 
     drawCity(x, y, color) {
         if (this.drawCustomPiece('city', x, y, color, 36)) return;
-        const ctx = this.ctx;
-        const size = 18;
-
-        ctx.save();
-        ctx.translate(x, y);
-
-        // Black pixel outline
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(-size / 2 - 2, -size / 3 - 2, size + 4, size * 0.7 + 4);
-
-        // Left Tower
-        ctx.fillRect(-size / 2 - 2, -size + 2, 7, size);
-        // Right Tower
-        ctx.fillRect(size / 2 - 5, -size + 2, 7, size);
-
-        // City Main Building (Player color)
-        ctx.fillStyle = color;
-        ctx.fillRect(-size / 2, -size / 3, size, size * 0.7);
-
-        // Towers
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(-size / 2, -size + 4, 5, size - 4);
-        ctx.fillRect(size / 2 - 3, -size + 4, 5, size - 4);
-
-        // Turret crenellations
-        ctx.fillStyle = color;
-        ctx.fillRect(-size / 2, -size + 2, 2, 2);
-        ctx.fillRect(size / 2, -size + 2, 2, 2);
-
-        // Gate / Entrance
-        ctx.fillStyle = '#1e293b';
-        ctx.fillRect(-3, 2, 6, 6);
-
-        ctx.restore();
+        const sprite = pixelSprites.city(color);
+        const w = sprite.width * 2, h = sprite.height * 2;
+        this.ctx.drawImage(sprite, Math.round(x - w / 2), Math.round(y - h * 0.62), w, h);
     }
 
     drawInteractionOverlays() {
@@ -426,21 +324,29 @@ class HexlandRenderer {
         }
     }
 
+    // Roads: square pixel blocks with a dark outline, like the tile art
     drawRoadLine(p1, p2, color) {
+        this.pixelLine(p1, p2, color, PIXEL_PALETTE.k, 6, shade(color, 45));
+    }
+
+    // A chunky pixel line: an outline pass, then the fill, then a highlight
+    pixelLine(p1, p2, fill, outline, size, highlight = null) {
         const ctx = this.ctx;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 8;
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 5;
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
+        const dx = p2.x - p1.x, dy = p2.y - p1.y;
+        const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 2));
+        const snap = v => Math.round(v / 2) * 2;
+        const pts = [];
+        for (let i = 0; i <= steps; i++) pts.push({ x: snap(p1.x + dx * i / steps), y: snap(p1.y + dy * i / steps) });
+        // keep the ends clear of buildings a little
+        const half = size / 2;
+        ctx.fillStyle = outline;
+        pts.forEach(p => ctx.fillRect(p.x - half - 2, p.y - half - 2, size + 4, size + 4));
+        ctx.fillStyle = fill;
+        pts.forEach(p => ctx.fillRect(p.x - half, p.y - half, size, size));
+        if (highlight) {
+            ctx.fillStyle = highlight;
+            pts.forEach((p, i) => { if (i % 4 === 0) ctx.fillRect(p.x - half, p.y - half, 2, 2); });
+        }
     }
 
     // Ghost of the piece being placed: snapped to the nearest legal spot,
@@ -484,15 +390,17 @@ class HexlandRenderer {
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
         if (kind === 'road') this.drawRoadLine({ x: cx - 12, y: cy + 8 }, { x: cx + 12, y: cy - 8 }, color);
-        else if (kind === 'city') this.drawCity(cx, cy + 6, color);
-        else this.drawSettlement(cx, cy + 5, color);
+        else if (kind === 'city') this.drawCity(cx, cy + 12, color);
+        else this.drawSettlement(cx, cy + 9, color);
         this.ctx = main;
     }
 
     drawPopups() {
         const ctx = this.ctx;
-        ctx.font = 'bold 14px monospace';
+        ctx.font = '10px "Press Start 2P", monospace';
         ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
 
         for (let i = this.popups.length - 1; i >= 0; i--) {
             const p = this.popups[i];
@@ -506,11 +414,22 @@ class HexlandRenderer {
 
             ctx.save();
             ctx.globalAlpha = p.alpha;
-            // Text shadow
-            ctx.fillStyle = '#000000';
-            ctx.fillText(p.text, p.x + 1, p.y + 1);
+            // a leading emoji becomes its pixel icon; dark outline so the text reads on any tile
+            const split = pixelIcons.splitLeading(p.text);
+            const text = split ? split.rest : p.text;
+            let x = Math.round(p.x), y = Math.round(p.y);
+            if (split) {
+                const iw = split.icon.width * 2, ih = split.icon.height * 2;
+                const tw = ctx.measureText(text).width;
+                const left = Math.round(x - (iw + 6 + tw) / 2);
+                ctx.drawImage(split.icon, left, Math.round(y - ih / 2), iw, ih);
+                x = Math.round(left + iw + 6 + tw / 2);
+            }
+            ctx.strokeStyle = PIXEL_PALETTE.k;
+            ctx.lineWidth = 4;
+            ctx.strokeText(text, x, y);
             ctx.fillStyle = p.color;
-            ctx.fillText(p.text, p.x, p.y);
+            ctx.fillText(text, x, y);
             ctx.restore();
         }
     }
